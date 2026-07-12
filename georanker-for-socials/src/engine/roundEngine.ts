@@ -9,6 +9,8 @@ export interface ScoreInput {
   rawRef: string | null;
   /** Optional explicit game date (YYYY-MM-DD) for historical/export processing. */
   gameDate?: string;
+  /** Actual chat time of the submission (YYYY-MM-DD HH:MM:SS) for analytics. */
+  submittedAt?: string | null;
 }
 
 export type RoundOutcome =
@@ -84,6 +86,7 @@ export class RoundEngine {
       source: input.source,
       rawRef: input.rawRef,
       score: input.score,
+      submittedAt: input.submittedAt ?? null,
     });
 
     const subs = this.repo.getSubmissionsForLevel(round.id, round.playoff_level);

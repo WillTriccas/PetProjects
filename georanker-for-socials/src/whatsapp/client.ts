@@ -21,6 +21,8 @@ export interface IncomingMessage {
   senderJid: string;
   /** Message id, used as a submission reference. */
   rawRef: string;
+  /** Unix seconds when the message was sent, if known. */
+  timestamp?: number;
   /** Text body, if the message was text. */
   text?: string;
   /** Image payload, if the message contained an image. */
@@ -114,6 +116,10 @@ export class WhatsAppClient implements GroupMessenger {
     const rawRef: string = msg.key?.id ?? "";
     const content = msg.message ?? {};
 
+    const tsRaw = msg.messageTimestamp;
+    const timestamp: number | undefined =
+      typeof tsRaw === "number" ? tsRaw : tsRaw ? Number(tsRaw) : undefined;
+
     const text: string | undefined =
       content.conversation ??
       content.extendedTextMessage?.text ??
@@ -121,7 +127,7 @@ export class WhatsAppClient implements GroupMessenger {
       undefined;
 
     const imageMessage = content.imageMessage;
-    const incoming: IncomingMessage = { senderJid, rawRef, text };
+    const incoming: IncomingMessage = { senderJid, rawRef, timestamp, text };
 
     if (imageMessage) {
       incoming.image = {

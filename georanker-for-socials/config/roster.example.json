@@ -3,16 +3,19 @@
     {
       "displayName": "Alice",
       "whatsappJid": "447700900001@s.whatsapp.net",
+      "telegramUserId": 111111111,
+      "telegramUsername": "alice_g",
       "aliases": ["Alice Smith", "Ali"]
     },
     {
       "displayName": "Bob",
       "whatsappJid": "447700900002@s.whatsapp.net",
+      "telegramUserId": 222222222,
       "aliases": ["Bobby"]
     },
     {
       "displayName": "Charlie",
-      "whatsappJid": "447700900003@s.whatsapp.net"
+      "telegramUsername": "charlie99"
     }
   ]
 }

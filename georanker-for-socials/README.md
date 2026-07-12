@@ -6,16 +6,21 @@ tie-break playoffs), keeps a running points tally in a lightweight local
 database, and gives you the winner + standings message to drop in the group — so
 nobody has to manually tally scores in a notes app anymore.
 
-## Two ways to run it
+## Ways to run it
 
 | Mode | Risk to your WhatsApp | Automation | Best for |
 | --- | --- | --- | --- |
 | **Export mode** (default, recommended) | **None** | Semi-manual | Anyone who can't risk their number |
-| **Live bot** (advanced) | Small (bot account only) | Fully automated | A dedicated/throwaway number |
+| **Telegram bot** (fully automated) | **None** | Fully automated | Groups happy to play in Telegram |
+| **WhatsApp live bot** (advanced) | Small (bot account only) | Fully automated | A dedicated/throwaway number |
 
-> **Your personal number is only ever at risk if _you_ link it to the live bot.**
-> Export mode uses WhatsApp's official "Export chat" feature and touches nothing —
-> zero ban risk, no second number needed. Start there.
+> **Your personal number is only ever at risk if _you_ link it to the WhatsApp
+> live bot.** Export mode uses WhatsApp's official "Export chat" feature and the
+> Telegram bot uses Telegram's official Bot API — both are **zero ban risk**.
+> Start with export mode; move to the Telegram bot if you want full automation.
+
+All three modes share one database, so your standings and history are continuous
+no matter which you use (or mix).
 
 ---
 
@@ -94,9 +99,42 @@ Notes:
 
 ---
 
-## Live bot mode (advanced — dedicated number only)
+## Telegram bot (fully automated — zero ban risk)
 
-Fully automates the flow inside the real group using
+If your group is happy to post scores in **Telegram**, this is the best of both
+worlds: fully automated *and* zero ban risk, because it uses Telegram's official
+Bot API (no account linking, nothing against anyone's Terms of Service). The bot
+watches the group, reads each photo/number, decides the winner, tracks the tally,
+and posts the enriched announcement itself.
+
+### Setup
+
+1. **Create a bot:** message [@BotFather](https://t.me/BotFather) → `/newbot` →
+   follow the prompts → copy the **bot token** into `TELEGRAM_BOT_TOKEN` in `.env`.
+2. **Let it read messages:** in BotFather → `/setprivacy` → select your bot →
+   **Disable** (so it can see all group messages), *or* make the bot a group admin.
+3. **Add the bot to your group.**
+4. **Find the chat id:** add [@RawDataBot](https://t.me/RawDataBot) to the group
+   briefly (or check the bot logs) and copy the group's `chat.id` (a negative
+   number like `-1001234567890`) into `TELEGRAM_CHAT_ID`. Remove RawDataBot after.
+5. **Identify players:** in `config/roster.json`, give each player their
+   `telegramUserId` (numeric, most reliable) and/or `telegramUsername` (without the
+   `@`). RawDataBot also shows user ids.
+
+### Run
+
+```bash
+npm run telegram
+```
+
+The bot long-polls Telegram, so no public server or webhook is needed — just keep
+it running (e.g. on a always-on machine, a Raspberry Pi, or a cheap VPS).
+
+---
+
+## WhatsApp live bot mode (advanced — dedicated number only)
+
+Fully automates the flow inside the real WhatsApp group using
 [Baileys](https://github.com/WhiskeySockets/Baileys) (a QR-linked account, like
 WhatsApp Web). It reads submissions and posts results itself, with no manual
 steps — but linking an account is against WhatsApp's Terms of Service and carries
@@ -123,6 +161,42 @@ e.g. `447700900123@s.whatsapp.net`).
 
 ---
 
+## Fun analytics & records
+
+Every run records each submission's score **and its real chat time**, so the app
+builds up long-term stats. Two things surface automatically:
+
+**Daily callouts** — appended to each winner announcement:
+- 🥄 **Wooden spoon** — the day's lowest score.
+- ⏱️ **Fastest finger** / 🌙 **Last to post** — earliest and latest submitters.
+- 🚀 **NEW RECORD** lines whenever the day beats an all-time record.
+
+**All-time records** ("hall of records"), tracked and called out when broken:
+highest score ever, lowest score ever, earliest & latest submission time ever,
+and biggest winning margin ever.
+
+**Weekly digest** — a fun summary you can post whenever you like:
+
+```bash
+npm run digest
+```
+
+It also prints at the end of every `process-export` run, and covers: standings,
+win streaks (current & longest), last-7-days form, per-player average/best/worst
+score, wooden-spoon counts, the fastest-finger league (early bird vs night owl),
+longest win drought, and the hall of records.
+
+### More analytics ideas (easy to add — tell me which you want)
+
+Player of the Month · comeback king (won the day after finishing last) ·
+consistency award (Mr Reliable vs Wildcard, by score variance) · clutch rating
+(playoff win %) · bridesmaid (most 2nd places) · milestone alerts (your Nth point/
+win) · perfect week · bogey weekday (the day you play worst) · Elo-style rating ·
+participation streak · group-PB day (highest combined scores) · nemesis heatmap
+(who beats you most) · "on this day" nostalgia.
+
+---
+
 ## Requirements
 
 - **Node.js 20+** (uses the built-in `node:sqlite`, so no native compilation).
@@ -135,7 +209,9 @@ e.g. `447700900123@s.whatsapp.net`).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `GITHUB_TOKEN` | — | GitHub PAT with `models` scope (required unless `EXTRACTOR=disabled`). |
-| `GROUP_JID` | — | Target group JID — **live bot only**. |
+| `GROUP_JID` | — | Target group JID — **WhatsApp live bot only**. |
+| `TELEGRAM_BOT_TOKEN` | — | BotFather token — **Telegram bot only**. |
+| `TELEGRAM_CHAT_ID` | — | Target group chat id (e.g. `-1001234567890`) — **Telegram bot only**. |
 | `GITHUB_MODELS_BASE_URL` | `https://models.github.ai/inference` | GitHub Models endpoint. |
 | `VISION_MODEL` | `openai/gpt-4o` | Vision-capable model id. |
 | `EXTRACTOR` | `github-models` | `github-models` or `disabled` (text-only). |
@@ -161,8 +237,20 @@ npm test
 ```
 
 Covers the round/playoff engine (including multi-level tie-breaks), score parsing
-from text and model output, the WhatsApp export parser, and announcement
-formatting.
+from text and model output, the WhatsApp export parser (incl. timestamps), the
+analytics computations (streaks, averages, wooden spoons, fastest finger, records),
+and announcement formatting.
+
+## Roster identity
+
+`config/roster.json` has one entry per player. A player can carry identifiers for
+any/all platforms and they all resolve to the same person, so standings stay
+continuous across modes:
+
+- `displayName` + `aliases` — names as they appear in a **WhatsApp export**.
+- `whatsappJid` — for the **WhatsApp live bot**.
+- `telegramUserId` (numeric, preferred) and/or `telegramUsername` — for the
+  **Telegram bot**.
 
 ## Data & state
 

@@ -7,6 +7,8 @@ import { rosterKeyFor } from "../config.js";
 import { SCHEMA_SQL } from "./schema.js";
 import type {
   PlayerRow,
+  PlayerScore,
+  RecordRow,
   RoundRow,
   SubmissionRow,
   SubmissionSource,
@@ -32,6 +34,17 @@ export class Repository {
     }
     this.db = new DatabaseSync(dbPath);
     this.db.exec(SCHEMA_SQL);
+    this.migrate();
+  }
+
+  /** Lightweight migrations for databases created before newer columns existed. */
+  private migrate(): void {
+    const cols = this.db
+      .prepare(`PRAGMA table_info(submissions)`)
+      .all() as unknown as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === "submitted_at")) {
+      this.db.exec(`ALTER TABLE submissions ADD COLUMN submitted_at TEXT`);
+    }
   }
 
   close(): void {
@@ -131,14 +144,16 @@ export class Repository {
     source: SubmissionSource;
     rawRef: string | null;
     score: number;
+    submittedAt?: string | null;
   }): void {
     this.db
       .prepare(
-        `INSERT INTO submissions (round_id, player_id, playoff_level, source, raw_ref, score)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO submissions (round_id, player_id, playoff_level, source, raw_ref, score, submitted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(round_id, player_id, playoff_level)
          DO UPDATE SET source = excluded.source, raw_ref = excluded.raw_ref,
-                       score = excluded.score, created_at = datetime('now')`,
+                       score = excluded.score, submitted_at = excluded.submitted_at,
+                       created_at = datetime('now')`,
       )
       .run(
         params.roundId,
@@ -147,6 +162,7 @@ export class Repository {
         params.source,
         params.rawRef,
         params.score,
+        params.submittedAt ?? null,
       );
   }
 
@@ -214,5 +230,85 @@ export class Repository {
          ORDER BY points DESC, p.display_name ASC`,
       )
       .all() as unknown as TallyEntry[];
+  }
+
+  // ─────────────────────────── Analytics ───────────────────────────
+
+  /** Level-0 scores for a round (the "main game" everyone plays), with names. */
+  getDayScores(roundId: number): PlayerScore[] {
+    return this.db
+      .prepare(
+        `SELECT s.player_id AS playerId, p.display_name AS displayName,
+                s.score AS score, s.submitted_at AS submittedAt
+         FROM submissions s
+         JOIN players p ON p.id = s.player_id
+         WHERE s.round_id = ? AND s.playoff_level = 0
+         ORDER BY s.score DESC`,
+      )
+      .all(roundId) as unknown as PlayerScore[];
+  }
+
+  /** Every level-0 score across history (for all-time records/averages). */
+  getAllDayScores(): (PlayerScore & { gameDate: string })[] {
+    return this.db
+      .prepare(
+        `SELECT s.player_id AS playerId, p.display_name AS displayName,
+                s.score AS score, s.submitted_at AS submittedAt,
+                r.game_date AS gameDate
+         FROM submissions s
+         JOIN players p ON p.id = s.player_id
+         JOIN rounds r ON r.id = s.round_id
+         WHERE s.playoff_level = 0
+         ORDER BY r.game_date ASC, s.score DESC`,
+      )
+      .all() as unknown as (PlayerScore & { gameDate: string })[];
+  }
+
+  /** Resolved rounds that awarded a winner, oldest first. */
+  getDecidedRounds(): Array<{
+    roundId: number;
+    gameDate: string;
+    winnerPlayerId: number;
+    winnerName: string;
+  }> {
+    return this.db
+      .prepare(
+        `SELECT r.id AS roundId, r.game_date AS gameDate,
+                r.winner_player_id AS winnerPlayerId, p.display_name AS winnerName
+         FROM rounds r
+         JOIN players p ON p.id = r.winner_player_id
+         WHERE r.status = 'resolved' AND r.winner_player_id IS NOT NULL
+         ORDER BY r.game_date ASC, r.id ASC`,
+      )
+      .all() as unknown as Array<{
+      roundId: number;
+      gameDate: string;
+      winnerPlayerId: number;
+      winnerName: string;
+    }>;
+  }
+
+  getRecord(key: string): RecordRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM records WHERE key = ?`)
+      .get(key) as RecordRow | undefined;
+  }
+
+  upsertRecord(rec: {
+    key: string;
+    metric: number;
+    playerId: number | null;
+    gameDate: string | null;
+    detail: string | null;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO records (key, metric, player_id, game_date, detail, updated_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET metric = excluded.metric,
+           player_id = excluded.player_id, game_date = excluded.game_date,
+           detail = excluded.detail, updated_at = datetime('now')`,
+      )
+      .run(rec.key, rec.metric, rec.playerId, rec.gameDate, rec.detail);
   }
 }

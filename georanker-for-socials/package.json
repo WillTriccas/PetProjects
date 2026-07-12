@@ -13,21 +13,26 @@
     "dev": "tsx watch src/index.ts",
     "list-groups": "tsx src/tools/listGroups.ts",
     "process-export": "tsx src/tools/processExport.ts",
+    "telegram": "tsx src/telegram/main.ts",
+    "digest": "tsx src/tools/digest.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "keywords": [
     "whatsapp",
+    "telegram",
     "georankl",
     "bot",
     "baileys",
+    "grammy",
     "leaderboard"
   ],
   "license": "MIT",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.9",
     "dotenv": "^16.4.7",
+    "grammy": "^1.44.0",
     "pino": "^9.6.0",
     "qrcode-terminal": "^0.12.0",
     "zod": "^3.24.1"

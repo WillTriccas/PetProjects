@@ -63,4 +63,14 @@ describe("parseExport", () => {
     const msgs = parseExport("[07/13/2026, 6:23:45 PM] Alice: 100");
     expect(msgs[0]!.isoDate).toBe("2026-07-13");
   });
+
+  it("captures a full local timestamp (24h)", () => {
+    const msgs = parseExport("[12/07/2026, 18:23:45] Alice: 9050");
+    expect(msgs[0]!.isoTimestamp).toBe("2026-07-12 18:23:45");
+  });
+
+  it("converts 12h AM/PM times and pads missing seconds", () => {
+    const msgs = parseExport("07/13/2026, 6:05 PM - Alice: 100");
+    expect(msgs[0]!.isoTimestamp).toBe("2026-07-13 18:05:00");
+  });
 });

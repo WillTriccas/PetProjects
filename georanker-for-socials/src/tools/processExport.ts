@@ -9,6 +9,7 @@ import { createImageExtractor, parseScoreFromText } from "../extractor/index.js"
 import { RoundEngine } from "../engine/roundEngine.js";
 import { Announcer, type GroupMessenger } from "../announcer/announcer.js";
 import { formatTally } from "../announcer/format.js";
+import { StatsService } from "../analytics/statsService.js";
 import { parseExport, type ParsedExportMessage } from "../whatsapp/exportParser.js";
 
 /** Prints announcements to the console for the user to copy-paste into the group. */
@@ -86,7 +87,8 @@ async function run(config: AppConfig, inputPath: string): Promise<void> {
   repo.syncPlayers(config.roster.players);
   const extractor = createImageExtractor(config.env);
   const engine = new RoundEngine(repo, config.env.TIMEZONE);
-  const announcer = new Announcer(new ConsoleMessenger());
+  const stats = new StatsService(repo);
+  const announcer = new Announcer(new ConsoleMessenger(), stats);
 
   const messages = parseExport(readFileSync(txtPath, "utf8"));
   logger.info({ count: messages.length }, "Parsed messages");
@@ -132,6 +134,7 @@ async function run(config: AppConfig, inputPath: string): Promise<void> {
       source: result.source,
       rawRef: key,
       gameDate: msg.isoDate ?? undefined,
+      submittedAt: msg.isoTimestamp ?? undefined,
     });
     if (outcome.type === "resolved" || outcome.type === "playoff") scored++;
     await announcer.announce(outcome);
@@ -141,6 +144,11 @@ async function run(config: AppConfig, inputPath: string): Promise<void> {
 
   console.log(`\n${"=".repeat(40)}\n📊 FINAL STANDINGS\n${"=".repeat(40)}`);
   console.log(formatTally(repo.getTally()));
+
+  console.log(`\n${"=".repeat(40)}\n📣 ─── weekly digest (post when you like) ───`);
+  console.log(stats.buildDigest());
+  console.log("=".repeat(40));
+
   logger.info({ newlyProcessed, decidedRounds: scored }, "Export processing complete");
   repo.close();
 }

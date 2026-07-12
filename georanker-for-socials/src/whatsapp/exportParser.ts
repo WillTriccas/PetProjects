@@ -19,6 +19,8 @@ export interface ParsedExportMessage {
   dayKey: string;
   /** Best-effort normalised date (YYYY-MM-DD), or null if unparseable. */
   isoDate: string | null;
+  /** Best-effort local timestamp (YYYY-MM-DD HH:MM:SS), or null if unparseable. */
+  isoTimestamp: string | null;
   /** Sender name as written in the export, or null for system messages. */
   sender: string | null;
   /** Message text (media placeholders stripped where sensible). */
@@ -36,13 +38,33 @@ const DIRECTION_MARKS = /[\u200e\u200f\u202a-\u202e]/g;
 
 interface HeaderMatch {
   dayKey: string;
+  timeKey: string;
   rest: string;
 }
 
 function matchHeader(line: string): HeaderMatch | null {
   const m = IOS_HEADER.exec(line) ?? ANDROID_HEADER.exec(line);
   if (!m) return null;
-  return { dayKey: m[1]!, rest: (m[3] ?? "").replace(DIRECTION_MARKS, "") };
+  return {
+    dayKey: m[1]!,
+    timeKey: m[2] ?? "",
+    rest: (m[3] ?? "").replace(DIRECTION_MARKS, ""),
+  };
+}
+
+/** Normalise a time token to HH:MM:SS (24h). Handles 12h AM/PM and missing seconds. */
+function normaliseTime(timeKey: string): string | null {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([APap][Mm])?$/.exec(timeKey.trim());
+  if (!m) return null;
+  let hour = Number(m[1]);
+  const minute = Number(m[2]);
+  const second = m[3] ? Number(m[3]) : 0;
+  const meridiem = m[4]?.toLowerCase();
+  if (meridiem === "pm" && hour < 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(hour)}:${pad(minute)}:${pad(second)}`;
 }
 
 function splitSenderBody(rest: string): { sender: string | null; body: string } {
@@ -92,10 +114,13 @@ export function parseExport(text: string): ParsedExportMessage[] {
     const header = matchHeader(line);
     if (header) {
       const { sender, body } = splitSenderBody(header.rest);
+      const isoDate = normaliseDate(header.dayKey);
+      const time = normaliseTime(header.timeKey);
       messages.push({
         order: order++,
         dayKey: header.dayKey,
-        isoDate: normaliseDate(header.dayKey),
+        isoDate,
+        isoTimestamp: isoDate && time ? `${isoDate} ${time}` : null,
         sender,
         body,
         attachedFile: detectAttachment(body),

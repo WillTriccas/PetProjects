@@ -3,7 +3,9 @@ import { logger } from "./logger.js";
 import { Repository } from "./db/repository.js";
 import { createImageExtractor, parseScoreFromText } from "./extractor/index.js";
 import { RoundEngine } from "./engine/roundEngine.js";
+import { localTimestampFor } from "./engine/gameDate.js";
 import { Announcer } from "./announcer/announcer.js";
+import { StatsService } from "./analytics/statsService.js";
 import { WhatsAppClient, type IncomingMessage } from "./whatsapp/client.js";
 
 /**
@@ -32,7 +34,8 @@ export async function startApp(): Promise<{ shutdown: () => void }> {
     authStateDir: config.env.AUTH_STATE_DIR,
     groupJid: config.env.GROUP_JID,
   });
-  const announcer = new Announcer(whatsapp);
+  const stats = new StatsService(repo);
+  const announcer = new Announcer(whatsapp, stats);
 
   whatsapp.onGroupMessage(async (msg: IncomingMessage) => {
     const player = repo.getPlayerByJid(msg.senderJid);
@@ -71,11 +74,16 @@ export async function startApp(): Promise<{ shutdown: () => void }> {
     }
 
     logger.info({ player: player.display_name, score, source }, "Recording score");
+    const submittedAt =
+      msg.timestamp !== undefined
+        ? localTimestampFor(config.env.TIMEZONE, new Date(msg.timestamp * 1000))
+        : localTimestampFor(config.env.TIMEZONE);
     const outcome = engine.recordScore({
       playerId: player.id,
       score,
       source,
       rawRef: msg.rawRef,
+      submittedAt,
     });
     await announcer.announce(outcome);
   });

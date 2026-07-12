@@ -23,10 +23,16 @@ export function formatWinnerAnnouncement(
   winner: PlayerRow,
   winningScore: number,
   tally: TallyEntry[],
+  extraSections: string[] = [],
 ): string {
+  const extras = extraSections
+    .filter((s) => s && s.trim().length > 0)
+    .map((s) => `${s}\n\n`)
+    .join("");
   return (
     `🏆 *${APP_NAME}* — winner of the day!\n\n` +
     `👑 *${winner.display_name}* takes it with *${formatScore(winningScore)}*.\n\n` +
+    extras +
     `📊 *Standings*\n${formatTally(tally)}`
   );
 }
@@ -43,7 +49,7 @@ export function formatPlayoffAnnouncement(
   );
 }
 
-function formatScore(score: number): string {
+export function formatScore(score: number): string {
   return Number.isInteger(score) ? score.toLocaleString("en-US") : String(score);
 }
 

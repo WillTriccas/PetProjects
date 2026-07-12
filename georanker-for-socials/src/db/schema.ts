@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   raw_ref       TEXT,
   score         REAL    NOT NULL,
   created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  submitted_at  TEXT,
   UNIQUE (round_id, player_id, playoff_level)
 );
 
@@ -54,5 +55,16 @@ CREATE INDEX IF NOT EXISTS idx_points_player ON points(player_id);
 CREATE TABLE IF NOT EXISTS processed_messages (
   message_key TEXT PRIMARY KEY,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- All-time superlatives ("hall of records"). One row per record key; updated
+-- once per resolved round so record-breaking moments can be called out.
+CREATE TABLE IF NOT EXISTS records (
+  key        TEXT    PRIMARY KEY,
+  metric     REAL    NOT NULL,
+  player_id  INTEGER REFERENCES players(id),
+  game_date  TEXT,
+  detail     TEXT,
+  updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 `;

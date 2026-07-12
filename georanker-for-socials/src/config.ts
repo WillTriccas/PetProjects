@@ -14,6 +14,11 @@ import { z } from "zod";
 const playerSchema = z.object({
   displayName: z.string().min(1),
   whatsappJid: z.string().min(1).optional(),
+  /** Telegram numeric user id (preferred match) for the automated Telegram bot. */
+  telegramUserId: z.number().int().optional(),
+  /** Telegram @username (without the @), used as a fallback match. */
+  telegramUsername: z.string().min(1).optional(),
+  /** Alternative names the player may appear as in a WhatsApp chat export. */
   aliases: z.array(z.string().min(1)).optional(),
 });
 
@@ -27,6 +32,10 @@ export type Roster = z.infer<typeof rosterSchema>;
 const envSchema = z.object({
   /** Target WhatsApp group JID, e.g. "1234567890-1600000000@g.us". Live bot only. */
   GROUP_JID: z.string().optional(),
+  /** Telegram bot token from @BotFather. Telegram bot only. */
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  /** Target Telegram chat/group id (e.g. "-1001234567890"). Telegram bot only. */
+  TELEGRAM_CHAT_ID: z.string().optional(),
   /** GitHub PAT with the `models` scope, used for GitHub Models inference. */
   GITHUB_TOKEN: z.string().optional(),
   /** GitHub Models base URL. */
@@ -59,6 +68,10 @@ export interface AppConfig {
   playersByJid: Map<string, Player>;
   /** Lookup of player by a normalised display name / alias (export mode). */
   playersByName: Map<string, Player>;
+  /** Lookup of player by Telegram numeric user id (Telegram bot mode). */
+  playersByTelegramId: Map<number, Player>;
+  /** Lookup of player by normalised Telegram @username (Telegram bot mode). */
+  playersByTelegramUsername: Map<string, Player>;
 }
 
 /** Normalise a name for matching: trim, collapse whitespace, lower-case. */
@@ -136,5 +149,30 @@ export function loadConfig(): AppConfig {
   );
   const playersByName = buildNameMap(roster);
 
-  return { env, roster, playersByJid, playersByName };
+  const playersByTelegramId = new Map<number, Player>();
+  const playersByTelegramUsername = new Map<string, Player>();
+  for (const p of roster.players) {
+    if (p.telegramUserId !== undefined) {
+      if (playersByTelegramId.has(p.telegramUserId)) {
+        throw new Error(`Duplicate telegramUserId in roster: ${p.telegramUserId}`);
+      }
+      playersByTelegramId.set(p.telegramUserId, p);
+    }
+    if (p.telegramUsername) {
+      const key = p.telegramUsername.replace(/^@/, "").toLowerCase();
+      if (playersByTelegramUsername.has(key)) {
+        throw new Error(`Duplicate telegramUsername in roster: ${p.telegramUsername}`);
+      }
+      playersByTelegramUsername.set(key, p);
+    }
+  }
+
+  return {
+    env,
+    roster,
+    playersByJid,
+    playersByName,
+    playersByTelegramId,
+    playersByTelegramUsername,
+  };
 }
