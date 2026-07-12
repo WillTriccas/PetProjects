@@ -5,7 +5,8 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS players (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   display_name  TEXT    NOT NULL,
-  whatsapp_jid  TEXT    NOT NULL UNIQUE,
+  whatsapp_jid  TEXT,
+  roster_key    TEXT    NOT NULL UNIQUE,
   active        INTEGER NOT NULL DEFAULT 1
 );
 
@@ -47,4 +48,11 @@ CREATE TABLE IF NOT EXISTS points (
 
 CREATE INDEX IF NOT EXISTS idx_submissions_round ON submissions(round_id);
 CREATE INDEX IF NOT EXISTS idx_points_player ON points(player_id);
+
+-- Dedupe key for chat-export processing so re-running or incremental exports
+-- never double-count a message.
+CREATE TABLE IF NOT EXISTS processed_messages (
+  message_key TEXT PRIMARY KEY,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;

@@ -9,7 +9,7 @@ const tally: TallyEntry[] = [
 ];
 
 function player(name: string): PlayerRow {
-  return { id: 1, display_name: name, whatsapp_jid: "x", active: 1 };
+  return { id: 1, display_name: name, whatsapp_jid: "x", roster_key: name, active: 1 };
 }
 
 describe("format", () => {

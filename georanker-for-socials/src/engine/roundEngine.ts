@@ -7,6 +7,8 @@ export interface ScoreInput {
   score: number;
   source: SubmissionSource;
   rawRef: string | null;
+  /** Optional explicit game date (YYYY-MM-DD) for historical/export processing. */
+  gameDate?: string;
 }
 
 export type RoundOutcome =
@@ -56,10 +58,10 @@ export class RoundEngine {
       .filter((p): p is PlayerRow => p !== undefined);
   }
 
-  private ensureRound(): RoundRow {
+  private ensureRound(gameDate?: string): RoundRow {
     const current = this.repo.getCurrentRound();
     if (current) return current;
-    return this.repo.openRound(gameDateFor(this.timezone));
+    return this.repo.openRound(gameDate ?? gameDateFor(this.timezone));
   }
 
   /**
@@ -67,7 +69,7 @@ export class RoundEngine {
    * machine, returning what happened so the caller can announce it.
    */
   recordScore(input: ScoreInput): RoundOutcome {
-    const round = this.ensureRound();
+    const round = this.ensureRound(input.gameDate);
     const eligible = this.eligiblePlayers(round);
     const eligibleIds = new Set(eligible.map((p) => p.id));
 

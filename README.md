@@ -3,5 +3,5 @@ This repo will contain all of the projects I am focusing on that are light touch
 
 ## Projects
 
-- [**GeoRanker for socials**](./georanker-for-socials/) — a WhatsApp bot that reads daily GeoRankl score submissions from a group chat, picks the winner (with tie-break playoffs), tracks a cumulative points tally, and announces results back to the group.
+- [**GeoRanker for socials**](./georanker-for-socials/) — reads daily GeoRankl score submissions from a WhatsApp group, picks the winner (with tie-break playoffs), tracks a cumulative points tally, and produces the results message to post back to the group. Runs in a zero-risk **export mode** (parses a WhatsApp "Export chat") by default, with an optional fully-automated live bot mode.
 

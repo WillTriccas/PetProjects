@@ -4,7 +4,8 @@ export type SubmissionSource = "image" | "text";
 export interface PlayerRow {
   id: number;
   display_name: string;
-  whatsapp_jid: string;
+  whatsapp_jid: string | null;
+  roster_key: string;
   active: number;
 }
 

@@ -3,6 +3,7 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Player } from "../config.js";
+import { rosterKeyFor } from "../config.js";
 import { SCHEMA_SQL } from "./schema.js";
 import type {
   PlayerRow,
@@ -40,25 +41,26 @@ export class Repository {
   /** Upsert the configured roster into the players table. */
   syncPlayers(players: Player[]): void {
     const upsert = this.db.prepare(
-      `INSERT INTO players (display_name, whatsapp_jid, active)
-       VALUES (?, ?, 1)
-       ON CONFLICT(whatsapp_jid)
-       DO UPDATE SET display_name = excluded.display_name, active = 1`,
+      `INSERT INTO players (display_name, whatsapp_jid, roster_key, active)
+       VALUES (?, ?, ?, 1)
+       ON CONFLICT(roster_key)
+       DO UPDATE SET display_name = excluded.display_name,
+                     whatsapp_jid = excluded.whatsapp_jid, active = 1`,
     );
-    const jids = new Set(players.map((p) => p.whatsappJid));
+    const keys = new Set(players.map((p) => rosterKeyFor(p)));
     const deactivate = this.db.prepare(
-      `UPDATE players SET active = 0 WHERE whatsapp_jid = ?`,
+      `UPDATE players SET active = 0 WHERE roster_key = ?`,
     );
     for (const p of players) {
-      upsert.run(p.displayName, p.whatsappJid);
+      upsert.run(p.displayName, p.whatsappJid ?? null, rosterKeyFor(p));
     }
     // Deactivate anyone in the DB but no longer on the roster.
     const existing = this.db
-      .prepare(`SELECT whatsapp_jid FROM players WHERE active = 1`)
-      .all() as Array<{ whatsapp_jid: string }>;
+      .prepare(`SELECT roster_key FROM players WHERE active = 1`)
+      .all() as Array<{ roster_key: string }>;
     for (const row of existing) {
-      if (!jids.has(row.whatsapp_jid)) {
-        deactivate.run(row.whatsapp_jid);
+      if (!keys.has(row.roster_key)) {
+        deactivate.run(row.roster_key);
       }
     }
   }
@@ -73,6 +75,12 @@ export class Repository {
     return this.db
       .prepare(`SELECT * FROM players WHERE whatsapp_jid = ?`)
       .get(jid) as PlayerRow | undefined;
+  }
+
+  getPlayerByRosterKey(rosterKey: string): PlayerRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM players WHERE roster_key = ?`)
+      .get(rosterKey) as PlayerRow | undefined;
   }
 
   getPlayerById(id: number): PlayerRow | undefined {
@@ -166,6 +174,31 @@ export class Repository {
       tx.exec("ROLLBACK");
       throw err;
     }
+  }
+
+  /** Close a round without awarding a point (e.g. an incomplete game day). */
+  abandonRound(roundId: number): void {
+    this.db
+      .prepare(
+        `UPDATE rounds SET status = 'resolved', winner_player_id = NULL, resolved_at = datetime('now') WHERE id = ?`,
+      )
+      .run(roundId);
+  }
+
+  /** @returns true if this message key was already processed. */
+  isMessageProcessed(messageKey: string): boolean {
+    const row = this.db
+      .prepare(`SELECT 1 AS x FROM processed_messages WHERE message_key = ?`)
+      .get(messageKey);
+    return row !== undefined;
+  }
+
+  /** @returns true if newly recorded, false if it was already present. */
+  markMessageProcessed(messageKey: string): boolean {
+    const info = this.db
+      .prepare(`INSERT OR IGNORE INTO processed_messages (message_key) VALUES (?)`)
+      .run(messageKey);
+    return info.changes > 0;
   }
 
   /** Cumulative points tally across all resolved rounds, highest first. */

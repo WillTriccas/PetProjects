@@ -12,6 +12,11 @@ import { WhatsAppClient, type IncomingMessage } from "./whatsapp/client.js";
  */
 export async function startApp(): Promise<{ shutdown: () => void }> {
   const config = loadConfig();
+  if (!config.env.GROUP_JID) {
+    throw new Error(
+      "GROUP_JID is required to run the live bot. Set it in .env, or use `npm run process-export` for the safe export-based workflow.",
+    );
+  }
   logger.info(
     { players: config.roster.players.length, group: config.env.GROUP_JID },
     "Starting GeoRanker for socials",
