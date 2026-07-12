@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Auto Journal</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📔</span>
+      <div>
+        <h1>Auto Journal</h1>
+        <p class="tagline">Stop and smell the roses — one grounded entry a day.</p>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-view="timeline">Timeline</button>
+      <button class="tab" data-view="create">Create</button>
+      <button class="tab" data-view="import">Import</button>
+      <button class="tab" data-view="settings">Settings</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Timeline -->
+    <section id="view-timeline" class="view active">
+      <div id="entries" class="entries"></div>
+      <p id="timeline-empty" class="empty hidden">No entries yet. Import a day's data, then create your first entry.</p>
+    </section>
+
+    <!-- Create / generate -->
+    <section id="view-create" class="view">
+      <div class="card">
+        <h2>Create an entry</h2>
+        <label>Day
+          <input type="date" id="gen-day" />
+        </label>
+        <p id="day-hint" class="hint"></p>
+        <label>Anything else worth remembering? (optional)
+          <textarea id="gen-note" rows="4" placeholder="A thought, a moment, something the data won't know…"></textarea>
+        </label>
+        <button id="gen-btn" class="primary">Generate my day</button>
+        <p id="gen-status" class="status"></p>
+        <div id="gen-result" class="result hidden"></div>
+      </div>
+    </section>
+
+    <!-- Import -->
+    <section id="view-import" class="view">
+      <div class="card">
+        <h2>Photos & videos</h2>
+        <p class="muted">Grounds the entry. EXIF time & GPS are read automatically; drop a whole day at once.</p>
+        <label>Fallback day (for files without a timestamp)
+          <input type="date" id="photo-day" />
+        </label>
+        <input type="file" id="photo-files" accept="image/*,video/*" multiple />
+        <button class="primary" data-import="photos">Upload photos</button>
+        <p class="status" data-status="photos"></p>
+      </div>
+
+      <div class="card">
+        <h2>WhatsApp</h2>
+        <p class="muted">In WhatsApp: open a chat → ⋯ → <em>More → Export chat → Without media</em>. Upload the .txt.</p>
+        <input type="file" id="whatsapp-file" accept=".txt,text/plain" />
+        <button class="primary" data-import="whatsapp">Import chat</button>
+        <p class="status" data-status="whatsapp"></p>
+      </div>
+
+      <div class="card">
+        <h2>Messenger</h2>
+        <p class="muted">Facebook → <em>Download your information</em> → Messages (JSON). Upload a <code>message_1.json</code>.</p>
+        <input type="file" id="messenger-file" accept=".json,application/json" />
+        <button class="primary" data-import="messenger">Import messages</button>
+        <p class="status" data-status="messenger"></p>
+      </div>
+
+      <div class="card">
+        <h2>Call history</h2>
+        <p class="muted">Export your call log to CSV (e.g. an Android call-log exporter) and upload it here.</p>
+        <input type="file" id="calls-file" accept=".csv,text/csv" />
+        <button class="primary" data-import="calls">Import calls</button>
+        <p class="status" data-status="calls"></p>
+      </div>
+
+      <div class="card">
+        <h2>WHOOP activity</h2>
+        <p class="muted">Pulls strain, heart rate, calories, sleep & workouts for a day (needs a WHOOP token in Settings).</p>
+        <label>Day
+          <input type="date" id="whoop-day" />
+        </label>
+        <button class="primary" data-import="whoop">Fetch WHOOP day</button>
+        <p class="status" data-status="whoop"></p>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="view">
+      <div class="card">
+        <h2>Settings</h2>
+        <p id="token-status" class="status"></p>
+        <label>Model
+          <select id="set-model">
+            <option value="openai/gpt-5.5">GPT-5.5 (recommended)</option>
+            <option value="openai/gpt-4o">GPT-4o</option>
+          </select>
+        </label>
+        <label>Hero photos per entry
+          <input type="number" id="set-maxphotos" min="1" max="12" />
+        </label>
+        <label>WHOOP access token (optional, stored on the server)
+          <input type="password" id="set-whoop" placeholder="paste WHOOP OAuth token" />
+        </label>
+        <button id="save-settings" class="primary">Save settings</button>
+        <p class="status" data-status="settings"></p>
+      </div>
+      <div class="card muted small">
+        <h3>Privacy</h3>
+        <p>Your GitHub token lives only in the server's <code>.env</code> and is never sent to the browser. Photos, messages and activity stay in a local SQLite database. Only the hero photos and the day's structured summary are sent to GitHub Models to write the entry.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="detail" class="modal hidden">
+    <div class="modal-inner">
+      <button class="close" id="detail-close">✕</button>
+      <div id="detail-body"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
