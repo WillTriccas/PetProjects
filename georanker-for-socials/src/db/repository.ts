@@ -311,4 +311,22 @@ export class Repository {
       )
       .run(rec.key, rec.metric, rec.playerId, rec.gameDate, rec.detail);
   }
+
+  // ───────────────────────── Key/value app state ─────────────────────────
+
+  getState(key: string): string | undefined {
+    const row = this.db
+      .prepare(`SELECT value FROM app_state WHERE key = ?`)
+      .get(key) as { value: string } | undefined;
+    return row?.value;
+  }
+
+  setState(key: string, value: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO app_state (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(key, value);
+  }
 }

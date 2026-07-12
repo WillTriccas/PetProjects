@@ -8,14 +8,29 @@
 import type { Repository } from "../db/repository.js";
 import type { PlayerRow, RoundRow, TallyEntry } from "../db/models.js";
 import { formatScore, formatWinnerAnnouncement } from "../announcer/format.js";
-import { buildDayReport } from "./stats.js";
+import {
+  buildDayReport,
+  daysBetweenIso,
+  findOnThisDay,
+  findThisTimeLastMonth,
+  pickNostalgiaInterval,
+} from "./stats.js";
 import {
   candidatesFromDayReport,
   evaluateRecords,
   RECORD_DEFINITIONS,
   type RecordKey,
 } from "./records.js";
-import { formatDayExtras, formatDigest, formatRecordBreaks } from "./format.js";
+import {
+  formatDayExtras,
+  formatDigest,
+  formatOnThisDay,
+  formatRecordBreaks,
+  formatThisTimeLastMonth,
+} from "./format.js";
+
+const NOSTALGIA_LAST_SHOWN = "nostalgia_last_shown";
+const NOSTALGIA_NEXT_INTERVAL = "nostalgia_next_interval";
 
 export class StatsService {
   constructor(private readonly repo: Repository) {}
@@ -52,7 +67,53 @@ export class StatsService {
 
     const extras = formatDayExtras(report, winner.id);
     const recordLines = formatRecordBreaks(breaks);
-    return formatWinnerAnnouncement(winner, winningScore, tally, [recordLines, extras]);
+    const nostalgia = this.buildNostalgia(round.game_date);
+    return formatWinnerAnnouncement(winner, winningScore, tally, [
+      recordLines,
+      extras,
+      nostalgia,
+    ]);
+  }
+
+  /**
+   * Build the nostalgia block for a resolved day. "On this day" anniversaries
+   * are always shown when they exist; the "this time last month" memory is
+   * surfaced on a randomised ~46-day cadence so it feels spontaneous. Called
+   * once per resolution, so the cadence clock never double-advances on re-runs.
+   */
+  private buildNostalgia(today: string): string {
+    const decided = this.repo.getDecidedRounds().map((r) => ({
+      gameDate: r.gameDate,
+      winnerPlayerId: r.winnerPlayerId,
+      winnerName: r.winnerName,
+    }));
+    const all = this.repo.getAllDayScores();
+
+    const parts: string[] = [formatOnThisDay(findOnThisDay(decided, all, today))];
+
+    const memory = findThisTimeLastMonth(decided, all, today);
+    if (memory && this.nostalgiaDue(today)) {
+      parts.push(formatThisTimeLastMonth(memory));
+      this.repo.setState(NOSTALGIA_LAST_SHOWN, today);
+      this.repo.setState(NOSTALGIA_NEXT_INTERVAL, String(pickNostalgiaInterval()));
+    }
+    return parts.filter((p) => p.trim().length > 0).join("\n\n");
+  }
+
+  /** Whether enough (randomised) days have passed to surface a memory again. */
+  private nostalgiaDue(today: string): boolean {
+    const last = this.repo.getState(NOSTALGIA_LAST_SHOWN);
+    if (!last) {
+      // Start the clock the first time we're asked, so the first memory appears
+      // one randomised interval into the group's history rather than instantly.
+      this.repo.setState(NOSTALGIA_LAST_SHOWN, today);
+      this.repo.setState(NOSTALGIA_NEXT_INTERVAL, String(pickNostalgiaInterval()));
+      return false;
+    }
+    const interval = Number(
+      this.repo.getState(NOSTALGIA_NEXT_INTERVAL) ?? pickNostalgiaInterval(),
+    );
+    return daysBetweenIso(last, today) >= interval;
   }
 
   /** Build the weekly fun analytics digest from all history. */

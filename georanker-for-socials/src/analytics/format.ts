@@ -11,14 +11,19 @@ import type {
   DecidedRound,
   DayScore,
   FingerAverage,
+  NostalgiaNote,
+  OnThisDayNote,
   PlayerAverage,
   StreakInfo,
 } from "./stats.js";
 import {
   computeAverages,
+  computeBridesmaids,
   computeFingerLeague,
   computeForm,
+  computeGroupPB,
   computeLongestDrought,
+  computeMonthlyChampions,
   computeStreaks,
   computeWoodenSpoons,
 } from "./stats.js";
@@ -45,6 +50,43 @@ export function formatRecordBreaks(breaks: RecordBreak[]): string {
     (b) => `${b.emoji} *NEW RECORD* — ${b.label}! *${b.displayName}* (${b.detail})`,
   );
   return lines.join("\n");
+}
+
+// ───────────────────────────── Nostalgia ─────────────────────────────
+
+/** "🕰️ On this day" — anniversaries of the same calendar date. */
+export function formatOnThisDay(notes: OnThisDayNote[]): string {
+  if (notes.length === 0) return "";
+  const lines = notes.slice(0, 2).map((n) => {
+    const when = n.yearsAgo === 1 ? "A year ago today" : `${n.yearsAgo} years ago today`;
+    if (n.winnerName) {
+      const top =
+        n.topScore !== null ? ` — top score ${formatScore(n.topScore)} by ${n.topName}` : "";
+      return `📅 ${when}, *${n.winnerName}* won the day${top}.`;
+    }
+    return `📅 ${when}, top score was ${formatScore(n.topScore ?? 0)} by ${n.topName}.`;
+  });
+  return `🕰️ *On this day*\n${lines.join("\n")}`;
+}
+
+/** "🕰️ This time last month" — a random-cadence memory. */
+export function formatThisTimeLastMonth(note: NostalgiaNote | null): string {
+  if (!note) return "";
+  const who = note.winnerName ? `*${note.winnerName}* took the crown` : "nobody was crowned";
+  const top =
+    note.topName && note.topScore !== null
+      ? ` — ${note.topName} led with ${formatScore(note.topScore)}`
+      : "";
+  return `🕰️ *This time last month* (${note.gameDate})\n${who}${top}.`;
+}
+
+function monthLabel(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(Date.UTC(y!, (m ?? 1) - 1, 1)).toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function secondsToClock(seconds: number): string {
@@ -107,6 +149,39 @@ export function formatDigest(inputs: DigestInputs): string {
       .map((s) => `${s.name} ${s.count}`)
       .join(" · ");
     sections.push(`*🥄 Wooden spoons*\n${spoonLine}`);
+  }
+
+  const champions = computeMonthlyChampions(decided);
+  if (champions.length > 0) {
+    const potmLines: string[] = [];
+    const latest = champions[champions.length - 1]!;
+    potmLines.push(
+      `🏅 ${monthLabel(latest.month)}: *${latest.displayName}* (${latest.wins} win${latest.wins === 1 ? "" : "s"})`,
+    );
+    if (champions.length > 1) {
+      const prev = champions[champions.length - 2]!;
+      potmLines.push(`${monthLabel(prev.month)}: ${prev.displayName} (${prev.wins})`);
+    }
+    sections.push(`*👑 Player of the Month*\n${potmLines.join("\n")}`);
+  }
+
+  const bridesmaids = computeBridesmaids(allScores);
+  if (bridesmaids.size > 0) {
+    const bridesmaidLine = [...bridesmaids.values()]
+      .sort((a, b) => b.count - a.count)
+      .map((b) => `${b.name} ${b.count}`)
+      .join(" · ");
+    sections.push(`*🥈 Bridesmaid (most 2nd places)*\n${bridesmaidLine}`);
+  }
+
+  const groupPB = computeGroupPB(allScores);
+  if (groupPB) {
+    const contribs = groupPB.contributors
+      .map((c) => `${c.displayName} ${formatScore(c.score)}`)
+      .join(" + ");
+    sections.push(
+      `*💪 Group PB day*\n${groupPB.gameDate}: combined *${formatScore(groupPB.total)}* (${contribs})`,
+    );
   }
 
   const fingers = computeFingerLeague(allScores);

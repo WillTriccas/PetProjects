@@ -67,4 +67,10 @@ CREATE TABLE IF NOT EXISTS records (
   detail     TEXT,
   updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Small key/value store for app state (e.g. the randomised nostalgia clock).
+CREATE TABLE IF NOT EXISTS app_state (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
 `;

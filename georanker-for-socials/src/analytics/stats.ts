@@ -254,3 +254,205 @@ export function computeLongestDrought(rounds: DecidedRound[]): {
   }
   return worst;
 }
+
+// ─────────────────────────── Player of the Month ───────────────────────────
+
+export interface MonthChampion {
+  /** "YYYY-MM". */
+  month: string;
+  playerId: number;
+  displayName: string;
+  wins: number;
+}
+
+/**
+ * The winning-most player for each calendar month, oldest month first.
+ * Ties within a month go to whoever reached that win count first.
+ */
+export function computeMonthlyChampions(rounds: DecidedRound[]): MonthChampion[] {
+  const byMonth = new Map<string, Map<number, { name: string; wins: number }>>();
+  for (const r of rounds) {
+    const month = r.gameDate.slice(0, 7);
+    const players = byMonth.get(month) ?? new Map<number, { name: string; wins: number }>();
+    const e = players.get(r.winnerPlayerId) ?? { name: r.winnerName, wins: 0 };
+    e.wins += 1;
+    players.set(r.winnerPlayerId, e);
+    byMonth.set(month, players);
+  }
+  const champions: MonthChampion[] = [];
+  for (const [month, players] of byMonth) {
+    let best: MonthChampion | null = null;
+    for (const [playerId, e] of players) {
+      if (!best || e.wins > best.wins) {
+        best = { month, playerId, displayName: e.name, wins: e.wins };
+      }
+    }
+    if (best) champions.push(best);
+  }
+  return champions.sort((a, b) => a.month.localeCompare(b.month));
+}
+
+// ───────────────────────────── Bridesmaid ─────────────────────────────
+
+/** Count of days each player was the *sole* runner-up (2nd distinct score). */
+export function computeBridesmaids(all: DayScore[]): Map<number, { name: string; count: number }> {
+  const byDay = groupByDay(all);
+  const bridesmaids = new Map<number, { name: string; count: number }>();
+  for (const scores of byDay.values()) {
+    if (scores.length < 2) continue;
+    const distinct = [...new Set(scores.map((s) => s.score))].sort((a, b) => b - a);
+    if (distinct.length < 2) continue; // everyone tied → no runner-up
+    const second = distinct[1]!;
+    const runners = scores.filter((s) => s.score === second);
+    if (runners.length !== 1) continue; // only a *sole* runner-up earns it
+    const r = runners[0]!;
+    const e = bridesmaids.get(r.playerId) ?? { name: r.displayName, count: 0 };
+    e.count += 1;
+    bridesmaids.set(r.playerId, e);
+  }
+  return bridesmaids;
+}
+
+// ───────────────────────────── Group PB ─────────────────────────────
+
+export interface GroupPBDay {
+  gameDate: string;
+  total: number;
+  contributors: { displayName: string; score: number }[];
+}
+
+/** The day with the highest combined level-0 score ("group personal best"). */
+export function computeGroupPB(all: DayScore[]): GroupPBDay | null {
+  const byDay = groupByDay(all);
+  let best: GroupPBDay | null = null;
+  for (const [gameDate, scores] of byDay) {
+    if (!gameDate) continue;
+    const total = scores.reduce((a, s) => a + s.score, 0);
+    if (!best || total > best.total) {
+      best = {
+        gameDate,
+        total,
+        contributors: [...scores]
+          .sort((a, b) => b.score - a.score)
+          .map((s) => ({ displayName: s.displayName, score: s.score })),
+      };
+    }
+  }
+  return best;
+}
+
+// ───────────────────────────── Nostalgia ─────────────────────────────
+
+export interface NostalgiaNote {
+  gameDate: string;
+  /** Whole days between the remembered date and "today". */
+  daysAgo: number;
+  winnerName: string | null;
+  topName: string | null;
+  topScore: number | null;
+}
+
+export interface OnThisDayNote extends NostalgiaNote {
+  yearsAgo: number;
+}
+
+/** Whole days from `a` to `b` (both "YYYY-MM-DD"); negative if b precedes a. */
+export function daysBetweenIso(a: string, b: string): number {
+  const da = Date.parse(`${a}T00:00:00Z`);
+  const db = Date.parse(`${b}T00:00:00Z`);
+  return Math.round((db - da) / 86_400_000);
+}
+
+/** Same ISO date shifted back one calendar month (clamped by JS Date rollover). */
+function subtractOneMonthIso(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(y!, (m ?? 1) - 1, d ?? 1));
+  date.setUTCMonth(date.getUTCMonth() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function topScorerByDate(all: DayScore[]): Map<string, DayExtreme> {
+  const byDay = groupByDay(all);
+  const tops = new Map<string, DayExtreme>();
+  for (const [date, scores] of byDay) {
+    if (!date) continue;
+    const top = [...scores].sort((a, b) => b.score - a.score)[0]!;
+    tops.set(date, { playerId: top.playerId, displayName: top.displayName, score: top.score });
+  }
+  return tops;
+}
+
+/** True anniversaries: same MM-DD in a previous year, most recent first. */
+export function findOnThisDay(
+  decided: DecidedRound[],
+  all: DayScore[],
+  today: string,
+): OnThisDayNote[] {
+  const mmdd = today.slice(5);
+  const year = Number(today.slice(0, 4));
+  const winners = new Map(decided.map((d) => [d.gameDate, d.winnerName] as const));
+  const tops = topScorerByDate(all);
+  const notes: OnThisDayNote[] = [];
+  for (const [gameDate, top] of tops) {
+    if (gameDate === today || gameDate.slice(5) !== mmdd) continue;
+    const yearsAgo = year - Number(gameDate.slice(0, 4));
+    if (yearsAgo < 1) continue;
+    notes.push({
+      gameDate,
+      daysAgo: daysBetweenIso(gameDate, today),
+      yearsAgo,
+      winnerName: winners.get(gameDate) ?? null,
+      topName: top.displayName,
+      topScore: top.score,
+    });
+  }
+  return notes.sort((a, b) => a.yearsAgo - b.yearsAgo);
+}
+
+/** The game nearest to one calendar month ago (within ±`tolerance` days). */
+export function findThisTimeLastMonth(
+  decided: DecidedRound[],
+  all: DayScore[],
+  today: string,
+  tolerance = 4,
+): NostalgiaNote | null {
+  const target = Date.parse(`${subtractOneMonthIso(today)}T00:00:00Z`);
+  const winners = new Map(decided.map((d) => [d.gameDate, d.winnerName] as const));
+  const tops = topScorerByDate(all);
+  let best: { date: string; dist: number } | null = null;
+  for (const date of tops.keys()) {
+    if (date >= today) continue;
+    const dist = Math.abs(Date.parse(`${date}T00:00:00Z`) - target);
+    if (best === null || dist < best.dist) best = { date, dist };
+  }
+  if (!best || best.dist / 86_400_000 > tolerance) return null;
+  const top = tops.get(best.date)!;
+  return {
+    gameDate: best.date,
+    daysAgo: daysBetweenIso(best.date, today),
+    winnerName: winners.get(best.date) ?? null,
+    topName: top.displayName,
+    topScore: top.score,
+  };
+}
+
+/**
+ * A randomised interval (in days) between nostalgia notes, centred on ~46 days
+ * so there's no discernible pattern to when a memory surfaces.
+ */
+export function pickNostalgiaInterval(rng: () => number = Math.random): number {
+  const BASE = 46;
+  const JITTER = 16; // → interval in [30, 62]
+  return BASE - JITTER + Math.floor(rng() * (2 * JITTER + 1));
+}
+
+function groupByDay(all: DayScore[]): Map<string, DayScore[]> {
+  const byDay = new Map<string, DayScore[]>();
+  for (const s of all) {
+    const key = s.gameDate ?? "";
+    const bucket = byDay.get(key);
+    if (bucket) bucket.push(s);
+    else byDay.set(key, [s]);
+  }
+  return byDay;
+}

@@ -170,10 +170,18 @@ builds up long-term stats. Two things surface automatically:
 - 🥄 **Wooden spoon** — the day's lowest score.
 - ⏱️ **Fastest finger** / 🌙 **Last to post** — earliest and latest submitters.
 - 🚀 **NEW RECORD** lines whenever the day beats an all-time record.
+- 🕰️ **Nostalgia** — see below.
 
 **All-time records** ("hall of records"), tracked and called out when broken:
 highest score ever, lowest score ever, earliest & latest submission time ever,
 and biggest winning margin ever.
+
+**🕰️ Nostalgia notes** — flashbacks appended to the daily winner message:
+- **On this day** — surfaces automatically whenever the same calendar date has a
+  real anniversary in your history (e.g. "A year ago today, Alice won the day").
+- **This time last month** — a memory from ~a month ago (who was crowned, top
+  score). It's deliberately surfaced on a **randomised ~46-day cadence** (a fresh
+  random interval each time), so there's no rhyme or reason to when it pops up.
 
 **Weekly digest** — a fun summary you can post whenever you like:
 
@@ -183,17 +191,17 @@ npm run digest
 
 It also prints at the end of every `process-export` run, and covers: standings,
 win streaks (current & longest), last-7-days form, per-player average/best/worst
-score, wooden-spoon counts, the fastest-finger league (early bird vs night owl),
-longest win drought, and the hall of records.
+score, wooden-spoon counts, 👑 **Player of the Month** (winning-most player each
+month), 🥈 **Bridesmaid** (most sole 2nd-place finishes), 💪 **Group PB day**
+(highest ever combined score), the fastest-finger league (early bird vs night
+owl), longest win drought, and the hall of records.
 
 ### More analytics ideas (easy to add — tell me which you want)
 
-Player of the Month · comeback king (won the day after finishing last) ·
-consistency award (Mr Reliable vs Wildcard, by score variance) · clutch rating
-(playoff win %) · bridesmaid (most 2nd places) · milestone alerts (your Nth point/
-win) · perfect week · bogey weekday (the day you play worst) · Elo-style rating ·
-participation streak · group-PB day (highest combined scores) · nemesis heatmap
-(who beats you most) · "on this day" nostalgia.
+Comeback king (won the day after finishing last) · consistency award (Mr Reliable
+vs Wildcard, by score variance) · clutch rating (playoff win %) · milestone alerts
+(your Nth point/win) · perfect week · bogey weekday (the day you play worst) ·
+Elo-style rating · participation streak · nemesis heatmap (who beats you most).
 
 ---
 
@@ -238,7 +246,8 @@ npm test
 
 Covers the round/playoff engine (including multi-level tie-breaks), score parsing
 from text and model output, the WhatsApp export parser (incl. timestamps), the
-analytics computations (streaks, averages, wooden spoons, fastest finger, records),
+analytics computations (streaks, averages, wooden spoons, fastest finger, Player
+of the Month, bridesmaid, group PB, nostalgia, records),
 and announcement formatting.
 
 ## Roster identity
