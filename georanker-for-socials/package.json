@@ -1,0 +1,41 @@
+{
+  "name": "georanker-for-socials",
+  "version": "0.1.0",
+  "description": "A WhatsApp bot that reads daily GeoRankl submissions, decides the winner, tracks a cumulative points tally, and announces results in the group.",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "list-groups": "tsx src/tools/listGroups.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "whatsapp",
+    "georankl",
+    "bot",
+    "baileys",
+    "leaderboard"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "dotenv": "^16.4.7",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/qrcode-terminal": "^0.12.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

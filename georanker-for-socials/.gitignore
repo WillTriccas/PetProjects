@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment / secrets
+.env
+.env.local
+
+# WhatsApp auth state (Baileys multi-file auth) — NEVER commit this
+auth_state/
+*.session
+
+# Local database
+data/
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
