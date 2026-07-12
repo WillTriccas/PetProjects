@@ -69,7 +69,8 @@ final class JournalGenerator {
             model: model,
             system: Self.systemPrompt,
             userText: userText,
-            imageDataURIs: orderedImages
+            imageDataURIs: orderedImages,
+            isReasoningModel: model.contains("gpt-5")
         )
         let narrative = Self.trimToWordLimit(raw, limit: Self.maxWords)
 

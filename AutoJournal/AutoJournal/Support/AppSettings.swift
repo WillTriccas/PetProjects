@@ -6,7 +6,7 @@ import SwiftUI
 /// observe changes.
 @MainActor
 final class AppSettings: ObservableObject {
-    @AppStorage("selectedModel") var selectedModel: String = GitHubModel.gpt4o.rawValue
+    @AppStorage("selectedModel") var selectedModel: String = GitHubModel.gpt55.rawValue
     /// Number of representative photos to send to the model per day.
     @AppStorage("maxPhotosPerDay") var maxPhotosPerDay: Int = 6
     /// Whether the daily nudge notification is enabled.
@@ -16,7 +16,7 @@ final class AppSettings: ObservableObject {
     @Published private(set) var hasToken: Bool = KeychainStore.hasToken
 
     var model: GitHubModel {
-        GitHubModel(rawValue: selectedModel) ?? .gpt4o
+        GitHubModel(rawValue: selectedModel) ?? .gpt55
     }
 
     func token() -> String? { KeychainStore.loadToken() }
@@ -34,15 +34,24 @@ final class AppSettings: ObservableObject {
 
 /// Multimodal models available through the GitHub Models catalog.
 enum GitHubModel: String, CaseIterable, Identifiable {
+    case gpt55 = "openai/gpt-5.5"
     case gpt4o = "openai/gpt-4o"
-    case gpt4oMini = "openai/gpt-4o-mini"
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .gpt4o: return "GPT-4o (richest)"
-        case .gpt4oMini: return "GPT-4o mini (faster, cheaper)"
+        case .gpt55: return "GPT-5.5 (recommended)"
+        case .gpt4o: return "GPT-4o (fallback)"
+        }
+    }
+
+    /// GPT-5.x reasoning models reject a custom `temperature` and need a larger
+    /// completion budget to cover hidden reasoning tokens plus the entry.
+    var isReasoningModel: Bool {
+        switch self {
+        case .gpt55: return true
+        case .gpt4o: return false
         }
     }
 }

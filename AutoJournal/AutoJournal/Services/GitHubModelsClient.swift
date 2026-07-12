@@ -48,7 +48,8 @@ final class GitHubModelsClient {
         system: String,
         userText: String,
         imageDataURIs: [String],
-        maxTokens: Int = 700,
+        isReasoningModel: Bool = true,
+        maxTokens: Int = 2000,
         temperature: Double = 0.6
     ) async throws -> String {
         guard let token = tokenProvider(), !token.isEmpty else {
@@ -60,10 +61,13 @@ final class GitHubModelsClient {
             userContent.append(.init(type: "image_url", text: nil, imageURL: .init(url: uri)))
         }
 
+        // Reasoning models (GPT-5.x) reject a custom `temperature` and use
+        // `max_completion_tokens`; classic models use `max_tokens` + temperature.
         let body = ChatRequest(
             model: model,
-            temperature: temperature,
-            maxTokens: maxTokens,
+            temperature: isReasoningModel ? nil : temperature,
+            maxTokens: isReasoningModel ? nil : maxTokens,
+            maxCompletionTokens: isReasoningModel ? maxTokens : nil,
             messages: [
                 .init(role: "system", content: [.init(type: "text", text: system, imageURL: nil)]),
                 .init(role: "user", content: userContent),
@@ -107,13 +111,15 @@ final class GitHubModelsClient {
 
 private struct ChatRequest: Encodable {
     let model: String
-    let temperature: Double
-    let maxTokens: Int
+    let temperature: Double?
+    let maxTokens: Int?
+    let maxCompletionTokens: Int?
     let messages: [Message]
 
     enum CodingKeys: String, CodingKey {
         case model, temperature, messages
         case maxTokens = "max_tokens"
+        case maxCompletionTokens = "max_completion_tokens"
     }
 }
 

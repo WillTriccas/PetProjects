@@ -8,7 +8,7 @@ A native iOS app that automatically writes a short, warm diary entry about the d
 
 ```
 Photos (PhotoKit)  ─┐
-Activity (HealthKit)─┼─▶  DaySignals  ──▶  GitHub Models (gpt-4o, multimodal)  ──▶  JournalEntry
+Activity (HealthKit)─┼─▶  DaySignals  ──▶  GitHub Models (gpt-5.5, multimodal)  ──▶  JournalEntry
 Places (photo GPS) ─┘         ▲                                                      (SwiftData, on device)
 Manual notes ───────────────┘
 ```
