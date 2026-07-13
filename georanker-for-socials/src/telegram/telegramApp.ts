@@ -7,9 +7,13 @@
  *
  * Standings are unified with the other modes because every player resolves to
  * the same roster_key regardless of platform.
+ *
+ * Two transports share the exact same wiring (`wireTelegram`):
+ *   - long-polling  → `startTelegramApp()` (local / always-on `npm run telegram`)
+ *   - webhook       → the hosted web server mounts `client.webhookMiddleware()`
  */
 
-import { loadConfig, rosterKeyFor, type Player } from "../config.js";
+import { loadConfig, rosterKeyFor, type AppConfig, type Player } from "../config.js";
 import { logger } from "../logger.js";
 import { Repository } from "../db/repository.js";
 import { createImageExtractor, parseScoreFromText } from "../extractor/index.js";
@@ -19,8 +23,8 @@ import { Announcer } from "../announcer/announcer.js";
 import { StatsService } from "../analytics/statsService.js";
 import { TelegramClient, type IncomingTelegramMessage } from "./telegramClient.js";
 
-export async function startTelegramApp(): Promise<{ shutdown: () => void }> {
-  const config = loadConfig();
+/** Validate + parse the Telegram config, throwing friendly errors if missing. */
+export function telegramChatId(config: AppConfig): number {
   if (!config.env.TELEGRAM_BOT_TOKEN) {
     throw new Error(
       "TELEGRAM_BOT_TOKEN is required to run the Telegram bot. Create a bot with @BotFather and set it in .env.",
@@ -33,22 +37,30 @@ export async function startTelegramApp(): Promise<{ shutdown: () => void }> {
   }
   const chatId = Number(config.env.TELEGRAM_CHAT_ID);
   if (!Number.isFinite(chatId)) {
-    throw new Error(`TELEGRAM_CHAT_ID must be numeric (e.g. -1001234567890), got: ${config.env.TELEGRAM_CHAT_ID}`);
+    throw new Error(
+      `TELEGRAM_CHAT_ID must be numeric (e.g. -1001234567890), got: ${config.env.TELEGRAM_CHAT_ID}`,
+    );
   }
+  return chatId;
+}
 
-  logger.info(
-    { players: config.roster.players.length, chatId },
-    "Starting GeoRanker for socials (Telegram)",
-  );
-
-  const repo = new Repository(config.env.DB_PATH);
-  repo.syncPlayers(config.roster.players);
+/**
+ * Build a fully-wired {@link TelegramClient} against the given repository: score
+ * extraction, the round engine, and the announcer are all connected, and the
+ * group-message handler is registered. The caller chooses the transport —
+ * `connect()` for long-poll, or `webhookMiddleware()` for a hosted webhook.
+ *
+ * The repository is owned by the caller so the web server can share one DB
+ * connection between the dashboard API and the live bot.
+ */
+export function wireTelegram(config: AppConfig, repo: Repository): TelegramClient {
+  const chatId = telegramChatId(config);
 
   const imageExtractor = createImageExtractor(config.env);
   const engine = new RoundEngine(repo, config.env.TIMEZONE);
   const stats = new StatsService(repo);
 
-  const telegram = new TelegramClient({ botToken: config.env.TELEGRAM_BOT_TOKEN, chatId });
+  const telegram = new TelegramClient({ botToken: config.env.TELEGRAM_BOT_TOKEN!, chatId });
   const announcer = new Announcer(telegram, stats);
 
   const resolvePlayer = (msg: IncomingTelegramMessage): Player | undefined => {
@@ -107,6 +119,26 @@ export async function startTelegramApp(): Promise<{ shutdown: () => void }> {
     await announcer.announce(outcome);
   });
 
+  return telegram;
+}
+
+/**
+ * Long-polling entry used by `npm run telegram` (local, or always-on hosting
+ * where an inbound webhook isn't available). Owns its own repository.
+ */
+export async function startTelegramApp(): Promise<{ shutdown: () => void }> {
+  const config = loadConfig();
+  const chatId = telegramChatId(config);
+
+  logger.info(
+    { players: config.roster.players.length, chatId },
+    "Starting GeoRanker for socials (Telegram, long-poll)",
+  );
+
+  const repo = new Repository(config.env.DB_PATH);
+  repo.syncPlayers(config.roster.players);
+
+  const telegram = wireTelegram(config, repo);
   await telegram.connect();
 
   return {

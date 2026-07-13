@@ -57,6 +57,15 @@ const envSchema = z.object({
   AUTH_STATE_DIR: z.string().default("auth_state"),
   LOG_LEVEL: z.string().default("info"),
   NODE_ENV: z.string().optional(),
+  // ── Web dashboard / cloud hosting ──────────────────────────────────────────
+  /** Port the web server listens on (Azure App Service injects PORT). */
+  PORT: z.coerce.number().int().positive().default(8080),
+  /** Public HTTPS base URL of the deployed app, e.g. https://app.azurewebsites.net. */
+  PUBLIC_URL: z.string().url().optional(),
+  /** Secret path/token segment validating incoming Telegram webhook calls. */
+  TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
+  /** Shared secret protecting the web export-upload endpoint. */
+  ADMIN_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

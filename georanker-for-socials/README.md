@@ -20,7 +20,9 @@ nobody has to manually tally scores in a notes app anymore.
 > Start with export mode; move to the Telegram bot if you want full automation.
 
 All three modes share one database, so your standings and history are continuous
-no matter which you use (or mix).
+no matter which you use (or mix). A **read-only web dashboard** (see
+[Web dashboard & Azure hosting](#web-dashboard--azure-hosting)) can display the
+whole league on top of that same database, deployable free to Azure.
 
 ---
 
@@ -149,8 +151,8 @@ a **small ban risk for that account**.
 
 ```bash
 # In .env, set GROUP_JID and GITHUB_TOKEN, and fill in whatsappJid for each player.
-npm run list-groups     # scan the QR, then copy your group's JID into GROUP_JID
-npm run dev             # or: npm run build && npm start
+npm run list-groups          # scan the QR, then copy your group's JID into GROUP_JID
+npm run dev                  # dev, or: npm run build && npm run start:whatsapp
 ```
 
 The first run prints a QR code — on the bot's phone, open **WhatsApp → Settings →
@@ -158,6 +160,64 @@ Linked devices → Link a device** and scan it. The session is saved in
 `auth_state/` so you only link once. For live mode each player needs their
 `whatsappJid` in `config/roster.json` (the value shown by `list-groups`/logs,
 e.g. `447700900123@s.whatsapp.net`).
+
+---
+
+## Web dashboard & Azure hosting
+
+A themed, read-only web dashboard renders the whole league — standings, the
+Point Hoarder table, hall of records, streaks, player of the month, scoring
+averages, the fastest-finger league, wooden spoons, bridesmaids, group PB, win
+droughts and recent results — styled after the real GeoRankle page (Sora font,
+amber accent, neo-brutalist cards). It reads the **same shared database** as
+every other mode, so whatever the bots record shows up here instantly.
+
+### Run it locally
+
+```bash
+npm run serve                # tsx, http://localhost:8080
+# or the compiled build:
+npm run build && npm start
+```
+
+Then open <http://localhost:8080>. The page fetches `GET /api/dashboard` (plain
+JSON you can also curl) and `GET /healthz` is a liveness probe.
+
+### One service, three jobs
+
+The hosted process (`src/web/main.ts`) serves:
+
+- the static dashboard (`public/`) + `GET /api/dashboard`,
+- `POST /telegram/webhook` — the **fully-automated Telegram bot in webhook mode**
+  (used automatically when `PUBLIC_URL` is set; falls back to `npm run telegram`
+  long-polling locally),
+- `POST /api/upload-export` — an **authenticated** WhatsApp-export upload
+  (multipart `_chat.txt` + images), guarded by the `ADMIN_TOKEN` shared secret
+  sent as an `x-admin-token` header. Leave `ADMIN_TOKEN` unset to disable it.
+
+### Deploy to Azure — cheapest tier, upgrade-ready
+
+Deploys as **code** to a **Free F1** Linux App Service (Oryx builds it on the
+server). SQLite persists under `/home`, and because F1 sleeps when idle the
+Telegram bot runs in **webhook** mode so any message or dashboard hit wakes it.
+It's architected to upgrade later with zero code change — bump the plan to B1 for
+always-on, or ship the included `Dockerfile` to Azure Container Apps.
+
+```powershell
+# 1. Create config/roster.json (copy config/roster.example.json) and az login
+# 2. From georanker-for-socials/:
+./deploy/azure-free.ps1 -AppName georanker-<you> `
+    -TelegramBotToken "123:ABC" -TelegramChatId "-1001234567890" `
+    -GithubToken "ghp_..."      # omit to run text-only (EXTRACTOR=disabled)
+```
+
+(There's an equivalent `deploy/azure-free.sh` for bash.) The script sets
+`PUBLIC_URL` to your `*.azurewebsites.net` URL, so on startup the app
+self-registers its Telegram webhook — no manual webhook step. When it finishes it
+prints the dashboard URL and a `az webapp log tail` command.
+
+> The Telegram bot must have **Group Privacy disabled** (or be a group admin) to
+> see everyone's messages — set this in @BotFather.
 
 ---
 

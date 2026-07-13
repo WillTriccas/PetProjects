@@ -8,7 +8,8 @@
  * read messages (disable "Group Privacy" in BotFather, or make it an admin).
  */
 
-import { Bot } from "grammy";
+import { Bot, webhookCallback } from "grammy";
+import type { RequestHandler } from "express";
 import { logger } from "../logger.js";
 import type { GroupMessenger } from "../announcer/announcer.js";
 
@@ -43,6 +44,7 @@ export class TelegramClient implements GroupMessenger {
   private readonly bot: Bot;
   private readonly opts: TelegramClientOptions;
   private handler: TelegramMessageHandler | null = null;
+  private handlersRegistered = false;
 
   constructor(opts: TelegramClientOptions) {
     this.opts = opts;
@@ -53,7 +55,14 @@ export class TelegramClient implements GroupMessenger {
     this.handler = handler;
   }
 
-  async connect(): Promise<void> {
+  /**
+   * Register the grammy update handlers exactly once. Shared by both the
+   * long-polling (`connect`) and webhook (`webhookMiddleware`) transports.
+   */
+  private registerHandlers(): void {
+    if (this.handlersRegistered) return;
+    this.handlersRegistered = true;
+
     this.bot.on("message", async (ctx) => {
       try {
         if (ctx.chat.id !== this.opts.chatId) return; // only the target group
@@ -89,11 +98,40 @@ export class TelegramClient implements GroupMessenger {
     });
 
     this.bot.catch((err) => logger.error({ err: err.error }, "Telegram bot error"));
+  }
 
+  /** Long-poll for updates (local / always-on). Resolves once the bot is up. */
+  async connect(): Promise<void> {
+    this.registerHandlers();
     // start() long-polls; resolve once the bot is running so callers can proceed.
     void this.bot.start({
-      onStart: (info) => logger.info({ username: info.username }, "Telegram bot connected"),
+      onStart: (info) => logger.info({ username: info.username }, "Telegram bot connected (long-poll)"),
     });
+  }
+
+  /**
+   * Express middleware that ingests Telegram webhook calls. Used when the app is
+   * hosted behind a public HTTPS URL (e.g. Azure App Service) instead of polling.
+   */
+  webhookMiddleware(secretToken?: string): RequestHandler {
+    this.registerHandlers();
+    return webhookCallback(this.bot, "express", {
+      secretToken,
+    }) as RequestHandler;
+  }
+
+  /**
+   * Register this bot's webhook with Telegram so updates are pushed to `url`.
+   * `secretToken` (if set) must match the one given to `webhookMiddleware`.
+   */
+  async setWebhook(url: string, secretToken?: string): Promise<void> {
+    await this.bot.init();
+    await this.bot.api.setWebhook(url, {
+      secret_token: secretToken,
+      allowed_updates: ["message"],
+      drop_pending_updates: false,
+    });
+    logger.info({ url }, "Telegram webhook registered");
   }
 
   async sendToGroup(text: string): Promise<void> {
