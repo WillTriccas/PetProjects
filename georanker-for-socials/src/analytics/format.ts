@@ -95,6 +95,28 @@ function secondsToClock(seconds: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+/**
+ * Crowns the all-time points leader ("Point Hoarder"). Handles ties and returns
+ * an empty string until someone has actually scored a point.
+ */
+export function formatPointHoarder(tally: TallyEntry[]): string {
+  if (tally.length === 0 || tally[0]!.points <= 0) return "";
+  const top = tally[0]!.points;
+  const leaders = tally.filter((t) => t.points === top).map((t) => `*${t.displayName}*`);
+  const unit = `${top} point${top === 1 ? "" : "s"}`;
+  const who =
+    leaders.length === 1
+      ? `${leaders[0]} is our all-time Point Hoarder with *${top}* ${top === 1 ? "point" : "points"}`
+      : `${joinNamesLocal(leaders)} are tied atop the all-time table with *${unit}* each`;
+  return `👑 *Point Hoarder of the week*\n${who}!`;
+}
+
+function joinNamesLocal(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
 export interface DigestInputs {
   tally: TallyEntry[];
   decided: DecidedRound[];
@@ -106,6 +128,9 @@ export interface DigestInputs {
 export function formatDigest(inputs: DigestInputs): string {
   const { tally, decided, allScores, records } = inputs;
   const sections: string[] = ["📊 *GeoRanker weekly digest*"];
+
+  const hoarder = formatPointHoarder(tally);
+  if (hoarder) sections.push(hoarder);
 
   sections.push(`*🏆 Standings*\n${formatTally(tally)}`);
 

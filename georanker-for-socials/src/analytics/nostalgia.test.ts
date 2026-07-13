@@ -10,7 +10,7 @@ import {
   type DayScore,
   type DecidedRound,
 } from "./stats.js";
-import { formatOnThisDay, formatThisTimeLastMonth } from "./format.js";
+import { formatOnThisDay, formatThisTimeLastMonth, formatPointHoarder } from "./format.js";
 
 const ds = (
   playerId: number,
@@ -159,5 +159,33 @@ describe("nostalgia formatting", () => {
   it("returns empty strings when there's nothing to say", () => {
     expect(formatOnThisDay([])).toBe("");
     expect(formatThisTimeLastMonth(null)).toBe("");
+  });
+});
+
+describe("formatPointHoarder", () => {
+  const te = (playerId: number, displayName: string, points: number) => ({
+    playerId,
+    displayName,
+    points,
+  });
+
+  it("crowns the sole all-time leader", () => {
+    const text = formatPointHoarder([te(1, "Alice", 12), te(2, "Bob", 8), te(3, "Charlie", 3)]);
+    expect(text).toContain("Point Hoarder");
+    expect(text).toContain("Alice");
+    expect(text).toContain("12");
+    expect(text).not.toContain("Bob");
+  });
+
+  it("handles a tie at the top", () => {
+    const text = formatPointHoarder([te(1, "Alice", 9), te(2, "Bob", 9), te(3, "Charlie", 2)]);
+    expect(text).toContain("Alice");
+    expect(text).toContain("Bob");
+    expect(text).toContain("tied");
+  });
+
+  it("says nothing before anyone has scored", () => {
+    expect(formatPointHoarder([])).toBe("");
+    expect(formatPointHoarder([te(1, "Alice", 0), te(2, "Bob", 0)])).toBe("");
   });
 });
