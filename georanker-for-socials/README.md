@@ -189,13 +189,16 @@ and biggest winning margin ever.
 npm run digest
 ```
 
-It also prints at the end of every `process-export` run, and covers: 👑 **Point
-Hoarder** (whoever holds the most cumulative points of all time) with the full
-standings table beneath, win streaks (current & longest), last-7-days form,
-per-player average/best/worst score, wooden-spoon counts, 👑 **Player of the
-Month** (winning-most player each month), 🥈 **Bridesmaid** (most sole 2nd-place
-finishes), 💪 **Group PB day** (highest ever combined score), the fastest-finger
-league (early bird vs night owl), longest win drought, and the hall of records.
+It also prints at the end of every `process-export` run, and covers: standings
+(the daily-win points tally), 👑 **Point Hoarder** — whoever has the highest
+*cumulative GeoRankl score* of all time (the raw scores added up), so it
+recognises players who are consistently strong even when they keep coming 2nd or
+3rd and win no daily points — shown with a full cumulative-score table, win
+streaks (current & longest), last-7-days form, per-player average/best/worst
+score, wooden-spoon counts, 👑 **Player of the Month** (winning-most player each
+month), 🥈 **Bridesmaid** (most sole 2nd-place finishes), 💪 **Group PB day**
+(highest ever combined score), the fastest-finger league (early bird vs night
+owl), longest win drought, and the hall of records.
 
 ### More analytics ideas (easy to add — tell me which you want)
 

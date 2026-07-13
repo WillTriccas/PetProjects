@@ -163,22 +163,27 @@ describe("nostalgia formatting", () => {
 });
 
 describe("formatPointHoarder", () => {
-  const te = (playerId: number, displayName: string, points: number) => ({
+  const st = (playerId: number, displayName: string, total: number, games = total > 0 ? 1 : 0) => ({
     playerId,
     displayName,
-    points,
+    total,
+    games,
   });
 
-  it("crowns the sole all-time leader", () => {
-    const text = formatPointHoarder([te(1, "Alice", 12), te(2, "Bob", 8), te(3, "Charlie", 3)]);
+  it("crowns the highest cumulative scorer (not the win leader)", () => {
+    // Bob has fewer wins conceptually but the highest raw cumulative score.
+    const text = formatPointHoarder([st(2, "Bob", 30000), st(1, "Alice", 22000), st(3, "Charlie", 9000)]);
     expect(text).toContain("Point Hoarder");
+    expect(text).toContain("Bob");
+    expect(text).toContain("30,000");
+    expect(text).toContain("Cumulative GeoRankl score");
+    // Full table lists everyone.
     expect(text).toContain("Alice");
-    expect(text).toContain("12");
-    expect(text).not.toContain("Bob");
+    expect(text).toContain("Charlie");
   });
 
   it("handles a tie at the top", () => {
-    const text = formatPointHoarder([te(1, "Alice", 9), te(2, "Bob", 9), te(3, "Charlie", 2)]);
+    const text = formatPointHoarder([st(1, "Alice", 9000), st(2, "Bob", 9000), st(3, "Charlie", 2000)]);
     expect(text).toContain("Alice");
     expect(text).toContain("Bob");
     expect(text).toContain("tied");
@@ -186,6 +191,6 @@ describe("formatPointHoarder", () => {
 
   it("says nothing before anyone has scored", () => {
     expect(formatPointHoarder([])).toBe("");
-    expect(formatPointHoarder([te(1, "Alice", 0), te(2, "Bob", 0)])).toBe("");
+    expect(formatPointHoarder([st(1, "Alice", 0, 0), st(2, "Bob", 0, 0)])).toBe("");
   });
 });

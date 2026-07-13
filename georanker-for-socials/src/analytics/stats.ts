@@ -446,6 +446,33 @@ export function pickNostalgiaInterval(rng: () => number = Math.random): number {
   return BASE - JITTER + Math.floor(rng() * (2 * JITTER + 1));
 }
 
+// ───────────────────────── Cumulative score totals ─────────────────────────
+
+export interface PlayerScoreTotal {
+  playerId: number;
+  displayName: string;
+  /** Sum of all level-0 GeoRankl scores this player has ever posted. */
+  total: number;
+  games: number;
+}
+
+/**
+ * Total cumulative GeoRankl score per player across all history, highest first.
+ * This rewards consistently strong scoring independently of who won each day.
+ */
+export function computeScoreTotals(all: DayScore[]): PlayerScoreTotal[] {
+  const byPlayer = new Map<number, { name: string; total: number; games: number }>();
+  for (const s of all) {
+    const e = byPlayer.get(s.playerId) ?? { name: s.displayName, total: 0, games: 0 };
+    e.total += s.score;
+    e.games += 1;
+    byPlayer.set(s.playerId, e);
+  }
+  return [...byPlayer.entries()]
+    .map(([playerId, e]) => ({ playerId, displayName: e.name, total: e.total, games: e.games }))
+    .sort((a, b) => b.total - a.total);
+}
+
 function groupByDay(all: DayScore[]): Map<string, DayScore[]> {
   const byDay = new Map<string, DayScore[]>();
   for (const s of all) {

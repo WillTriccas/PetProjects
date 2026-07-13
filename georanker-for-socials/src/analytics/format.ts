@@ -14,6 +14,7 @@ import type {
   NostalgiaNote,
   OnThisDayNote,
   PlayerAverage,
+  PlayerScoreTotal,
   StreakInfo,
 } from "./stats.js";
 import {
@@ -24,6 +25,7 @@ import {
   computeGroupPB,
   computeLongestDrought,
   computeMonthlyChampions,
+  computeScoreTotals,
   computeStreaks,
   computeWoodenSpoons,
 } from "./stats.js";
@@ -96,19 +98,34 @@ function secondsToClock(seconds: number): string {
 }
 
 /**
- * Crowns the all-time points leader ("Point Hoarder"). Handles ties and returns
- * an empty string until someone has actually scored a point.
+ * Crowns the all-time cumulative-score leader ("Point Hoarder"). This is based
+ * on the raw GeoRankl score each player has racked up over time — NOT the
+ * daily-win tally — so it rewards players who score consistently well even when
+ * they don't win the day. Handles ties and shows the full cumulative table.
+ * Returns an empty string until someone has actually posted a score.
  */
-export function formatPointHoarder(tally: TallyEntry[]): string {
-  if (tally.length === 0 || tally[0]!.points <= 0) return "";
-  const top = tally[0]!.points;
-  const leaders = tally.filter((t) => t.points === top).map((t) => `*${t.displayName}*`);
-  const unit = `${top} point${top === 1 ? "" : "s"}`;
-  const who =
+export function formatPointHoarder(totals: PlayerScoreTotal[]): string {
+  if (totals.length === 0 || totals[0]!.total <= 0) return "";
+  const top = totals[0]!.total;
+  const leaders = totals.filter((t) => t.total === top).map((t) => `*${t.displayName}*`);
+  const crown =
     leaders.length === 1
-      ? `${leaders[0]} is our all-time Point Hoarder with *${top}* ${top === 1 ? "point" : "points"}`
-      : `${joinNamesLocal(leaders)} are tied atop the all-time table with *${unit}* each`;
-  return `👑 *Point Hoarder of the week*\n${who}!`;
+      ? `${leaders[0]} is our all-time Point Hoarder with a cumulative *${formatScore(top)}*`
+      : `${joinNamesLocal(leaders)} are tied as Point Hoarders on *${formatScore(top)}* each`;
+
+  const lines: string[] = [];
+  let lastValue: number | null = null;
+  let position = 0;
+  totals.forEach((t, i) => {
+    if (t.total !== lastValue) {
+      position = i + 1;
+      lastValue = t.total;
+    }
+    const medal = position === 1 ? "🥇" : position === 2 ? "🥈" : position === 3 ? "🥉" : `${position}.`;
+    lines.push(`${medal} ${t.displayName} — ${formatScore(t.total)}`);
+  });
+
+  return `👑 *Point Hoarder of the week*\n${crown}!\n\n*📈 Cumulative GeoRankl score*\n${lines.join("\n")}`;
 }
 
 function joinNamesLocal(names: string[]): string {
@@ -129,10 +146,10 @@ export function formatDigest(inputs: DigestInputs): string {
   const { tally, decided, allScores, records } = inputs;
   const sections: string[] = ["📊 *GeoRanker weekly digest*"];
 
-  const hoarder = formatPointHoarder(tally);
-  if (hoarder) sections.push(hoarder);
-
   sections.push(`*🏆 Standings*\n${formatTally(tally)}`);
+
+  const hoarder = formatPointHoarder(computeScoreTotals(allScores));
+  if (hoarder) sections.push(hoarder);
 
   const streaks = computeStreaks(decided);
   const hotStreak = streaks
