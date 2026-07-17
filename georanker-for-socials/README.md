@@ -6,6 +6,11 @@ tie-break playoffs), keeps a running points tally in a lightweight local
 database, and gives you the winner + standings message to drop in the group — so
 nobody has to manually tally scores in a notes app anymore.
 
+> **Screenshots only.** Only a **picture** counts as an official score. Each
+> player's **first picture each day is their GeoRankl score**; later pictures
+> (Geopaint, Geodle, Geodecide…) are ignored unless a tie-break needs them. Post
+> no picture on a day and you're marked **DQ** for that day (no score, no point).
+
 ## Ways to run it
 
 | Mode | Risk to your WhatsApp | Automation | Best for |
@@ -92,12 +97,15 @@ It prints, per completed day, a ready-to-paste message like:
 (The `*asterisks*` render as **bold** once pasted into WhatsApp.)
 
 Notes:
-- A day is only scored once **all** roster players submitted; incomplete days are
-  skipped (no winner).
-- Ties are resolved with a playoff — the tool reads the tied players' next scores
-  from that same day.
-- It's **idempotent and incremental**: re-running on the same (or a later, fuller)
-  export never double-counts, so you can export weekly and just re-run.
+- **Screenshots only.** A player's **first picture** each day is their GeoRankl
+  score. Anyone who posts no readable picture that day is **DQ** (they score
+  nothing and don't block the day from resolving).
+- Ties on the top score are resolved with a playoff — the tool reads the tied
+  players' **next pictures** from that same day (2nd picture = playoff 1, etc.),
+  highest wins, repeated until someone's clear.
+- It's **idempotent and incremental**: every picture is stored once, so re-running
+  on the same (or a later, fuller) export never double-counts. Export weekly and
+  just re-run — only genuinely new days get added.
 
 ---
 
@@ -165,12 +173,23 @@ e.g. `447700900123@s.whatsapp.net`).
 
 ## Web dashboard & Azure hosting
 
-A themed, read-only web dashboard renders the whole league — standings, the
-Point Hoarder table, hall of records, streaks, player of the month, scoring
-averages, the fastest-finger league, wooden spoons, bridesmaids, group PB, win
-droughts and recent results — styled after the real GeoRankle page (Sora font,
-amber accent, neo-brutalist cards). It reads the **same shared database** as
-every other mode, so whatever the bots record shows up here instantly.
+A themed web dashboard renders the whole league — standings, the Point Hoarder
+table, hall of records, streaks, player of the month, scoring averages, the
+fastest-finger league, wooden spoons, bridesmaids, **disqualifications**, group
+PB, win droughts and recent results — styled after the real GeoRankle page (Sora
+font, amber accent, neo-brutalist cards). It reads the **same shared database** as
+every other mode, so whatever the bots record shows up here instantly. A
+**"Screenshots only / DQ" disclaimer** sits at the top so the group knows the
+rules.
+
+### Upload an export straight from the dashboard
+
+The dashboard has an **⬆️ Upload a WhatsApp export (admin)** panel: paste your
+`ADMIN_TOKEN`, choose the WhatsApp **`.zip`** (the app unzips it for you and reads
+the `_chat.txt` + images inside), and hit **Process**. It ingests only the new
+days, re-tallies, and shows you the winner announcements — no CLI, no manual
+unzip. This is the intended "go live" loop: deploy once, then just drop the weekly
+`.zip` in the browser.
 
 ### Run it locally
 
@@ -207,14 +226,21 @@ always-on, or ship the included `Dockerfile` to Azure Container Apps.
 # 1. Create config/roster.json (copy config/roster.example.json) and az login
 # 2. From georanker-for-socials/:
 ./deploy/azure-free.ps1 -AppName georanker-<you> `
-    -TelegramBotToken "123:ABC" -TelegramChatId "-1001234567890" `
-    -GithubToken "ghp_..."      # omit to run text-only (EXTRACTOR=disabled)
+    -GithubToken "ghp_..." `           # required — reads the screenshots (models scope)
+    -AdminToken "pick-a-long-secret" ` # unlocks the dashboard upload panel
+    -TelegramBotToken "123:ABC" -TelegramChatId "-1001234567890"  # optional
 ```
+
+`GITHUB_TOKEN` is **required** because scoring is screenshot-only (a GitHub PAT
+with the `models` scope reads each picture). `ADMIN_TOKEN` protects — and enables
+— the dashboard's upload panel; set it to a long random secret. The Telegram
+options are optional.
 
 (There's an equivalent `deploy/azure-free.sh` for bash.) The script sets
 `PUBLIC_URL` to your `*.azurewebsites.net` URL, so on startup the app
 self-registers its Telegram webhook — no manual webhook step. When it finishes it
-prints the dashboard URL and a `az webapp log tail` command.
+prints the dashboard URL and a `az webapp log tail` command. Once it's up, open
+the dashboard, expand **Upload a WhatsApp export**, and drop your weekly `.zip`.
 
 > The Telegram bot must have **Group Privacy disabled** (or be a group admin) to
 > see everyone's messages — set this in @BotFather.
@@ -295,12 +321,17 @@ Elo-style rating · participation streak · nemesis heatmap (who beats you most)
 
 ## Submissions & scoring
 
-- A submission is either **a screenshot** (read by the vision model) or **a text
-  message with a number** (e.g. `9050` or `score: 9,050`).
-- Highest score wins the day → **1 point**.
-- Ties trigger a playoff among the tied players (highest of the next game wins,
-  repeated until unique).
-- A day/round only resolves once **all** roster players have submitted.
+- **Only screenshots count.** Text messages with numbers are ignored.
+- Each player's **first picture of the day** is taken as their GeoRankl score.
+  Later pictures (the other daily games) don't count for normal scoring.
+- No readable picture on a day → that player is **disqualified (DQ)**: no score,
+  no point, and they don't stop the day from resolving.
+- Highest first-picture score wins the day → **1 point**.
+- Ties on the top score trigger a **playoff** among the tied players, decided by
+  their subsequent pictures that day (higher wins, repeated until unique). If the
+  tied players run out of pictures the day is left unresolved.
+- Everything is **idempotent**: each picture is stored once, so re-uploading a
+  full/overlapping export never double-counts — only new days are added.
 
 ## Testing
 

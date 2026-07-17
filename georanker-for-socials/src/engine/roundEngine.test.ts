@@ -54,16 +54,19 @@ describe("RoundEngine", () => {
     expect(tally.find((t) => t.displayName === "Bob")!.points).toBe(0);
   });
 
-  it("lets a re-submission before resolution overwrite the previous score", () => {
+  it("keeps the first submission and ignores a re-submission at the same level", () => {
     const { engine, id } = ctx;
-    submit(engine, id("Alice"), 50); // Alice low
+    submit(engine, id("Alice"), 50); // Alice's first (counts)
     submit(engine, id("Bob"), 90);
-    submit(engine, id("Alice"), 200); // Alice re-submits higher
+    const ignored = submit(engine, id("Alice"), 200); // later image is ignored
+    expect(ignored.type).toBe("ignored");
+    if (ignored.type === "ignored") expect(ignored.reason).toBe("already-submitted");
     const final = submit(engine, id("Charlie"), 80);
     expect(final.type).toBe("resolved");
     if (final.type === "resolved") {
-      expect(final.winner.display_name).toBe("Alice");
-      expect(final.winningScore).toBe(200);
+      // Bob (90) wins; Alice's ignored 200 didn't count (she keeps her 50).
+      expect(final.winner.display_name).toBe("Bob");
+      expect(final.winningScore).toBe(90);
     }
   });
 

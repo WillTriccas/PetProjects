@@ -6,6 +6,8 @@ import type { Player } from "../config.js";
 import { rosterKeyFor } from "../config.js";
 import { SCHEMA_SQL } from "./schema.js";
 import type {
+  DisqualificationEntry,
+  ImageSubmissionRow,
   PlayerRow,
   PlayerScore,
   RecordRow,
@@ -14,6 +16,7 @@ import type {
   SubmissionSource,
   TallyEntry,
 } from "./models.js";
+import type { DayResolution } from "../engine/dayResolver.js";
 
 // Load node:sqlite via require so bundlers/test runners (Vite/Vitest) that don't
 // yet recognise the experimental builtin don't try to resolve it themselves.
@@ -288,10 +291,171 @@ export class Repository {
     }>;
   }
 
+  // ─────────────────── Raw image submissions (export mode) ───────────────────
+
+  /** @returns true if this image message key was already ingested. */
+  imageSubmissionExists(messageKey: string): boolean {
+    const row = this.db
+      .prepare(`SELECT 1 AS x FROM image_submissions WHERE message_key = ?`)
+      .get(messageKey);
+    return row !== undefined;
+  }
+
+  /** Insert a scored image. @returns true if newly inserted, false if a dupe. */
+  insertImageSubmission(row: {
+    messageKey: string;
+    gameDate: string;
+    playerId: number;
+    score: number | null;
+    submittedAt: string | null;
+    attachedFile: string | null;
+    msgOrder: number;
+  }): boolean {
+    const info = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO image_submissions
+           (message_key, game_date, player_id, score, submitted_at, attached_file, msg_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        row.messageKey,
+        row.gameDate,
+        row.playerId,
+        row.score,
+        row.submittedAt,
+        row.attachedFile,
+        row.msgOrder,
+      );
+    return info.changes > 0;
+  }
+
+  /** Distinct game dates that have at least one ingested image, oldest first. */
+  getImageDays(): string[] {
+    return (
+      this.db
+        .prepare(`SELECT DISTINCT game_date FROM image_submissions ORDER BY game_date ASC`)
+        .all() as unknown as Array<{ game_date: string }>
+    ).map((r) => r.game_date);
+  }
+
+  /** All ingested images for a day, ordered chronologically per player. */
+  getImagesForDay(gameDate: string): ImageSubmissionRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM image_submissions
+         WHERE game_date = ?
+         ORDER BY player_id ASC, submitted_at ASC, msg_order ASC`,
+      )
+      .all(gameDate) as unknown as ImageSubmissionRow[];
+  }
+
+  /** Whether any round already exists for the given game date. */
+  roundExistsForDate(gameDate: string): boolean {
+    const row = this.db
+      .prepare(`SELECT 1 AS x FROM rounds WHERE game_date = ? LIMIT 1`)
+      .get(gameDate);
+    return row !== undefined;
+  }
+
+  /**
+   * Persist a resolved game day, replacing any previous round for that date so
+   * re-processing (e.g. a later, fuller export) stays correct and idempotent.
+   * @returns the new round id.
+   */
+  saveDayResolution(res: DayResolution): number {
+    const tx = this.db;
+    tx.exec("BEGIN");
+    try {
+      // Remove any prior round for this date and its dependent rows. Points have
+      // no cascade, so delete them explicitly; submissions/DQs cascade.
+      const priorRounds = tx
+        .prepare(`SELECT id FROM rounds WHERE game_date = ?`)
+        .all(res.gameDate) as unknown as Array<{ id: number }>;
+      for (const r of priorRounds) {
+        tx.prepare(`DELETE FROM points WHERE round_id = ?`).run(r.id);
+        tx.prepare(`DELETE FROM rounds WHERE id = ?`).run(r.id);
+      }
+
+      const maxLevel = res.playoffs.length;
+      const info = tx
+        .prepare(
+          `INSERT INTO rounds (game_date, status, playoff_level, winner_player_id, resolved_at)
+           VALUES (?, 'resolved', ?, ?, datetime('now'))`,
+        )
+        .run(res.gameDate, maxLevel, res.winnerPlayerId);
+      const roundId = Number(info.lastInsertRowid);
+
+      const insertSub = tx.prepare(
+        `INSERT INTO submissions (round_id, player_id, playoff_level, source, raw_ref, score, submitted_at)
+         VALUES (?, ?, ?, 'image', NULL, ?, ?)`,
+      );
+      for (const s of res.level0) {
+        insertSub.run(roundId, s.playerId, 0, s.score, s.submittedAt);
+      }
+      for (const p of res.playoffs) {
+        for (const part of p.participants) {
+          insertSub.run(roundId, part.playerId, p.level, part.score, null);
+        }
+      }
+
+      if (res.winnerPlayerId !== null) {
+        tx.prepare(
+          `INSERT INTO points (player_id, round_id, points) VALUES (?, ?, 1)
+           ON CONFLICT(round_id) DO NOTHING`,
+        ).run(res.winnerPlayerId, roundId);
+      }
+
+      const insertDq = tx.prepare(
+        `INSERT OR IGNORE INTO disqualifications (round_id, player_id) VALUES (?, ?)`,
+      );
+      for (const dq of res.dqs) {
+        insertDq.run(roundId, dq.playerId);
+      }
+
+      tx.exec("COMMIT");
+      return roundId;
+    } catch (err) {
+      tx.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  /** Per-player count of days disqualified (no readable picture), most first. */
+  getDisqualificationCounts(): DisqualificationEntry[] {
+    return this.db
+      .prepare(
+        `SELECT d.player_id AS playerId, p.display_name AS displayName,
+                COUNT(*) AS count
+         FROM disqualifications d
+         JOIN players p ON p.id = d.player_id
+         GROUP BY d.player_id
+         ORDER BY count DESC, p.display_name ASC`,
+      )
+      .all() as unknown as DisqualificationEntry[];
+  }
+
+  /** Players disqualified on a specific round/day. */
+  getDayDisqualifications(roundId: number): Array<{ playerId: number; displayName: string }> {
+    return this.db
+      .prepare(
+        `SELECT d.player_id AS playerId, p.display_name AS displayName
+         FROM disqualifications d
+         JOIN players p ON p.id = d.player_id
+         WHERE d.round_id = ?
+         ORDER BY p.display_name ASC`,
+      )
+      .all(roundId) as unknown as Array<{ playerId: number; displayName: string }>;
+  }
+
   getRecord(key: string): RecordRow | undefined {
     return this.db
       .prepare(`SELECT * FROM records WHERE key = ?`)
       .get(key) as RecordRow | undefined;
+  }
+
+  /** Wipe the hall of records so it can be recomputed from full history. */
+  clearRecords(): void {
+    this.db.exec(`DELETE FROM records`);
   }
 
   upsertRecord(rec: {

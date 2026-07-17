@@ -55,3 +55,22 @@ export interface PlayerScore {
   /** Actual chat time of the submission (YYYY-MM-DD HH:MM:SS), if known. */
   submittedAt: string | null;
 }
+
+/** A raw scored image from a WhatsApp export (before day resolution). */
+export interface ImageSubmissionRow {
+  message_key: string;
+  game_date: string;
+  player_id: number;
+  score: number | null;
+  submitted_at: string | null;
+  attached_file: string | null;
+  msg_order: number;
+  created_at: string;
+}
+
+/** A player disqualified on a given day (no readable picture). */
+export interface DisqualificationEntry {
+  playerId: number;
+  displayName: string;
+  count: number;
+}

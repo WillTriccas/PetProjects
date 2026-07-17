@@ -54,6 +54,7 @@ export interface DashboardData {
   }>;
   woodenSpoons: Array<{ displayName: string; count: number }>;
   bridesmaids: Array<{ displayName: string; count: number }>;
+  disqualifications: Array<{ displayName: string; count: number }>;
   playerOfMonth: { month: string; displayName: string; wins: number } | null;
   monthlyChampions: Array<{ month: string; displayName: string; wins: number }>;
   groupPB: { gameDate: string; total: number; contributors: Array<{ displayName: string; score: number }> } | null;
@@ -64,6 +65,7 @@ export interface DashboardData {
     winnerName: string;
     topScore: number | null;
     scores: Array<{ displayName: string; score: number }>;
+    dqs: string[];
   }>;
 }
 
@@ -173,6 +175,11 @@ export function buildDashboardData(repo: Repository, timezone: string): Dashboar
     .map((e) => ({ displayName: e.name, count: e.count }))
     .sort((a, b) => b.count - a.count);
 
+  // ── Disqualifications (no picture posted that day) ──────────────────────
+  const disqualifications = repo
+    .getDisqualificationCounts()
+    .map((d) => ({ displayName: d.displayName, count: d.count }));
+
   // ── Monthly champions / player of the month ─────────────────────────────
   const monthlyChampions = computeMonthlyChampions(decided).map((m) => ({
     month: m.month,
@@ -204,7 +211,8 @@ export function buildDashboardData(repo: Repository, timezone: string): Dashboar
     .map((r) => {
       const scores = repo.getDayScores(r.roundId).map((s) => ({ displayName: s.displayName, score: s.score }));
       const topScore = scores.length > 0 ? Math.max(...scores.map((s) => s.score)) : null;
-      return { gameDate: r.gameDate, winnerName: r.winnerName, topScore, scores };
+      const dqs = repo.getDayDisqualifications(r.roundId).map((d) => d.displayName);
+      return { gameDate: r.gameDate, winnerName: r.winnerName, topScore, scores, dqs };
     });
 
   const latestGameDate = decidedRaw.length > 0
@@ -228,6 +236,7 @@ export function buildDashboardData(repo: Repository, timezone: string): Dashboar
     averages,
     woodenSpoons,
     bridesmaids,
+    disqualifications,
     playerOfMonth,
     monthlyChampions,
     groupPB,

@@ -16,7 +16,7 @@
 import { loadConfig, rosterKeyFor, type AppConfig, type Player } from "../config.js";
 import { logger } from "../logger.js";
 import { Repository } from "../db/repository.js";
-import { createImageExtractor, parseScoreFromText } from "../extractor/index.js";
+import { createImageExtractor } from "../extractor/index.js";
 import { RoundEngine } from "../engine/roundEngine.js";
 import { localTimestampFor } from "../engine/gameDate.js";
 import { Announcer } from "../announcer/announcer.js";
@@ -79,40 +79,26 @@ export function wireTelegram(config: AppConfig, repo: Repository): TelegramClien
     const player = repo.getPlayerByRosterKey(rosterKeyFor(rosterPlayer));
     if (!player) return;
 
-    let score: number | null = null;
-    let source: "image" | "text" = "text";
+    // IMAGE-ONLY: a submission must be a screenshot. Text messages (even bare
+    // numbers) never count — no picture means no score (a DQ for the day).
+    if (!msg.image) return;
 
-    if (msg.image) {
-      source = "image";
-      const { buffer, mimeType } = await msg.image.download();
-      score = await imageExtractor.extractFromImage(buffer, mimeType);
-      if (score === null) {
-        logger.warn({ player: player.display_name }, "Could not read score from image");
-        await telegram.sendToGroup(
-          `🤔 ${player.display_name}, I couldn't read a score from that screenshot — mind resending a clearer one?`,
-        );
-        return;
-      }
-    } else if (msg.text) {
-      score = parseScoreFromText(msg.text);
-      if (score === null) {
-        if (/\d/.test(msg.text)) {
-          await telegram.sendToGroup(
-            `🤔 ${player.display_name}, I couldn't work out your score from that — send just the number or a screenshot?`,
-          );
-        }
-        return;
-      }
-    } else {
+    const { buffer, mimeType } = await msg.image.download();
+    const score = await imageExtractor.extractFromImage(buffer, mimeType);
+    if (score === null) {
+      logger.warn({ player: player.display_name }, "Could not read score from image");
+      await telegram.sendToGroup(
+        `🤔 ${player.display_name}, I couldn't read a score from that screenshot — mind resending a clearer one?`,
+      );
       return;
     }
 
     const submittedAt = localTimestampFor(config.env.TIMEZONE, new Date(msg.timestamp * 1000));
-    logger.info({ player: player.display_name, score, source }, "Recording score");
+    logger.info({ player: player.display_name, score, source: "image" }, "Recording score");
     const outcome = engine.recordScore({
       playerId: player.id,
       score,
-      source,
+      source: "image",
       rawRef: msg.rawRef,
       submittedAt,
     });

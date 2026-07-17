@@ -14,7 +14,7 @@ export interface ScoreInput {
 }
 
 export type RoundOutcome =
-  | { type: "ignored"; reason: "not-eligible"; round: RoundRow }
+  | { type: "ignored"; reason: "not-eligible" | "already-submitted"; round: RoundRow }
   | { type: "recorded"; round: RoundRow; waitingOn: PlayerRow[] }
   | {
       type: "playoff";
@@ -77,6 +77,13 @@ export class RoundEngine {
 
     if (!eligibleIds.has(input.playerId)) {
       return { type: "ignored", reason: "not-eligible", round };
+    }
+
+    // First picture wins: once a player has a score at this level, later images
+    // (their other-game screenshots) are ignored rather than overwriting it.
+    const existing = this.repo.getSubmissionsForLevel(round.id, round.playoff_level);
+    if (existing.some((s) => s.player_id === input.playerId)) {
+      return { type: "ignored", reason: "already-submitted", round };
     }
 
     this.repo.upsertSubmission({

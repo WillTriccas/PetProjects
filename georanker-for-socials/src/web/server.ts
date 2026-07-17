@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
+import AdmZip from "adm-zip";
 import type { AppConfig } from "../config.js";
 import { logger } from "../logger.js";
 import type { Repository } from "../db/repository.js";
@@ -78,7 +79,7 @@ export function createApp(deps: WebServerDeps): Express {
       destination: (_req, _file, cb) => cb(null, mkdtempSync(join(tmpdir(), "georanker-upload-"))),
       filename: (_req, file, cb) => cb(null, file.originalname),
     }),
-    limits: { fileSize: 25 * 1024 * 1024, files: 500 },
+    limits: { fileSize: 200 * 1024 * 1024, files: 2000 },
   });
 
   const requireAdmin = (req: Request, res: Response, next: NextFunction): void => {
@@ -98,14 +99,26 @@ export function createApp(deps: WebServerDeps): Express {
   app.post("/api/upload-export", requireAdmin, upload.array("files"), async (req, res) => {
     const files = (req.files as Express.Multer.File[] | undefined) ?? [];
     if (files.length === 0) {
-      res.status(400).json({ error: "No files uploaded. Include the _chat.txt and any images." });
+      res.status(400).json({
+        error: "No file uploaded. Drop your WhatsApp .zip export (or the _chat.txt plus images).",
+      });
       return;
     }
     const uploadDir = files[0]!.destination;
     try {
+      // If a WhatsApp .zip was uploaded, unzip it in place so we can process the
+      // _chat.txt + media it contains — no manual extraction needed.
+      for (const file of files) {
+        if (file.originalname.toLowerCase().endsWith(".zip")) {
+          new AdmZip(file.path).extractAllTo(uploadDir, /* overwrite */ true);
+        }
+      }
+
       const hasTxt = readdirSync(uploadDir).some((f) => f.toLowerCase().endsWith(".txt"));
       if (!hasTxt) {
-        res.status(400).json({ error: "No .txt transcript found in the upload." });
+        res.status(400).json({
+          error: "No _chat.txt found. Upload the WhatsApp 'Export chat' .zip (or its contents).",
+        });
         return;
       }
       const { txtPath, mediaDir } = resolveExportPaths(uploadDir);

@@ -57,6 +57,33 @@ CREATE TABLE IF NOT EXISTS processed_messages (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Raw record of every scored *image* seen in a WhatsApp export. Only pictures
+-- are official GeoRankl scores; a player's FIRST image of a day is their score,
+-- later images are only consulted to break a playoff tie. Keyed by a stable
+-- per-media dedupe key so re-uploading a full/overlapping export never re-reads
+-- or double-counts an image. Days are recomputed from these rows, which is what
+-- makes incremental uploads idempotent.
+CREATE TABLE IF NOT EXISTS image_submissions (
+  message_key   TEXT    PRIMARY KEY,
+  game_date     TEXT    NOT NULL,
+  player_id     INTEGER NOT NULL REFERENCES players(id),
+  score         REAL,
+  submitted_at  TEXT,
+  attached_file TEXT,
+  msg_order     INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_image_submissions_day
+  ON image_submissions (game_date, player_id, submitted_at, msg_order);
+
+-- Players disqualified on a resolved day for posting no (readable) picture.
+CREATE TABLE IF NOT EXISTS disqualifications (
+  round_id   INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+  player_id  INTEGER NOT NULL REFERENCES players(id),
+  created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (round_id, player_id)
+);
+
 -- All-time superlatives ("hall of records"). One row per record key; updated
 -- once per resolved round so record-breaking moments can be called out.
 CREATE TABLE IF NOT EXISTS records (

@@ -32,18 +32,55 @@ import {
 const NOSTALGIA_LAST_SHOWN = "nostalgia_last_shown";
 const NOSTALGIA_NEXT_INTERVAL = "nostalgia_next_interval";
 
+const DIRECTION_BY_KEY = new Map(RECORD_DEFINITIONS.map((d) => [d.key, d.direction]));
+
 export class StatsService {
   constructor(private readonly repo: Repository) {}
 
   /**
    * Build the enriched "winner of the day" announcement and persist any records
-   * that were broken. Safe to call exactly once per round resolution.
+   * that were broken. Safe to call exactly once per round resolution (used by
+   * the live Telegram bot).
    */
   buildResolvedMessage(
     round: RoundRow,
     winner: PlayerRow,
     winningScore: number,
     tally: TallyEntry[],
+  ): string {
+    return this.composeResolved(round, winner, winningScore, tally, {
+      persist: true,
+      nostalgia: "full",
+    });
+  }
+
+  /**
+   * Like {@link buildResolvedMessage} but read-only: it never persists record
+   * updates and never advances the randomised nostalgia clock. Used by the batch
+   * export flow, which recomputes the whole hall of records once at the end (so a
+   * bulk import doesn't spam "NEW RECORD" for every historical day, while genuine
+   * new-day records still surface on later incremental uploads).
+   */
+  buildResolvedMessageReadOnly(
+    round: RoundRow,
+    winner: PlayerRow,
+    winningScore: number,
+    tally: TallyEntry[],
+    extraLead: string[] = [],
+  ): string {
+    return this.composeResolved(round, winner, winningScore, tally, {
+      persist: false,
+      nostalgia: "onThisDay",
+      extraLead,
+    });
+  }
+
+  private composeResolved(
+    round: RoundRow,
+    winner: PlayerRow,
+    winningScore: number,
+    tally: TallyEntry[],
+    opts: { persist: boolean; nostalgia: "full" | "onThisDay" | "none"; extraLead?: string[] },
   ): string {
     const scores = this.repo.getDayScores(round.id);
     const report = buildDayReport(scores);
@@ -55,20 +92,28 @@ export class StatsService {
       if (rec) existing.set(def.key, rec.metric);
     }
     const { breaks, updates } = evaluateRecords(candidates, existing);
-    for (const u of updates) {
-      this.repo.upsertRecord({
-        key: u.key,
-        metric: u.metric,
-        playerId: u.playerId,
-        gameDate: round.game_date,
-        detail: u.detail,
-      });
+    if (opts.persist) {
+      for (const u of updates) {
+        this.repo.upsertRecord({
+          key: u.key,
+          metric: u.metric,
+          playerId: u.playerId,
+          gameDate: round.game_date,
+          detail: u.detail,
+        });
+      }
     }
 
     const extras = formatDayExtras(report, winner.id);
     const recordLines = formatRecordBreaks(breaks);
-    const nostalgia = this.buildNostalgia(round.game_date);
+    const nostalgia =
+      opts.nostalgia === "full"
+        ? this.buildNostalgia(round.game_date)
+        : opts.nostalgia === "onThisDay"
+          ? this.buildOnThisDay(round.game_date)
+          : "";
     return formatWinnerAnnouncement(winner, winningScore, tally, [
+      ...(opts.extraLead ?? []),
       recordLines,
       extras,
       nostalgia,
@@ -114,6 +159,59 @@ export class StatsService {
       this.repo.getState(NOSTALGIA_NEXT_INTERVAL) ?? pickNostalgiaInterval(),
     );
     return daysBetweenIso(last, today) >= interval;
+  }
+
+  /** Read-only "on this day" anniversary block (no state mutation). */
+  private buildOnThisDay(today: string): string {
+    const decided = this.repo.getDecidedRounds().map((r) => ({
+      gameDate: r.gameDate,
+      winnerPlayerId: r.winnerPlayerId,
+      winnerName: r.winnerName,
+    }));
+    const all = this.repo.getAllDayScores();
+    return formatOnThisDay(findOnThisDay(decided, all, today));
+  }
+
+  /**
+   * Rebuild the all-time hall of records from full history. Used after a batch
+   * export so records stay consistent even when days are re-resolved (e.g. a
+   * later, fuller upload changes an old day's outcome).
+   */
+  recomputeRecords(): void {
+    const all = this.repo.getAllDayScores();
+    const byDay = new Map<string, typeof all>();
+    for (const s of all) {
+      const bucket = byDay.get(s.gameDate);
+      if (bucket) bucket.push(s);
+      else byDay.set(s.gameDate, [s]);
+    }
+
+    const best = new Map<RecordKey, { metric: number; playerId: number; detail: string; gameDate: string }>();
+    for (const gameDate of [...byDay.keys()].sort()) {
+      const report = buildDayReport(byDay.get(gameDate)!);
+      for (const c of candidatesFromDayReport(report, formatScore)) {
+        const direction = DIRECTION_BY_KEY.get(c.key);
+        if (!direction) continue;
+        const cur = best.get(c.key);
+        const beats =
+          cur === undefined ||
+          (direction === "high" ? c.metric > cur.metric : c.metric < cur.metric);
+        if (beats) {
+          best.set(c.key, { metric: c.metric, playerId: c.playerId, detail: c.detail, gameDate });
+        }
+      }
+    }
+
+    this.repo.clearRecords();
+    for (const [key, v] of best) {
+      this.repo.upsertRecord({
+        key,
+        metric: v.metric,
+        playerId: v.playerId,
+        gameDate: v.gameDate,
+        detail: v.detail,
+      });
+    }
   }
 
   /** Build the weekly fun analytics digest from all history. */

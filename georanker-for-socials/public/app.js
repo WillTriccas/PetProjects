@@ -204,6 +204,22 @@ function droughtCard(d) {
   return card("Win drought", "🏜️", "c-amber", body);
 }
 
+function dqCard(rows) {
+  if (!rows.length) {
+    return card("Disqualifications", "🚫", "c-red", emptyBody("Nobody's missed a day yet — keep it up!"));
+  }
+  const t = el("table");
+  t.innerHTML = "<thead><tr><th>Player</th><th class='num'>DQ days</th></tr></thead>";
+  const tb = el("tbody");
+  for (const r of rows) {
+    const tr = el("tr");
+    tr.innerHTML = `<td>${esc(r.displayName)}</td><td class="num">${num(r.count)}</td>`;
+    tb.append(tr);
+  }
+  t.append(tb);
+  return card("Disqualifications — no picture posted", "🚫", "c-red", t);
+}
+
 function recentCard(rows) {
   if (!rows.length) return card("Recent results", "📅", "c-purple", emptyBody("No results yet."));
   const wrap = el("div", "results");
@@ -214,10 +230,13 @@ function recentCard(rows) {
       .sort((a, b) => b.score - a.score)
       .map((s) => `${esc(s.displayName)} ${num(s.score)}`)
       .join(" · ");
+    const dqTag = r.dqs && r.dqs.length
+      ? `<span class="dq-tag">🚫 DQ: ${esc(r.dqs.join(", "))}</span>`
+      : "";
     row.innerHTML =
       `<span class="date">${esc(prettyDate(r.gameDate))}</span>` +
       `<span class="winner">🏆 ${esc(r.winnerName)}${r.topScore != null ? ` (${num(r.topScore)})` : ""}</span>` +
-      `<span class="scores">${others}</span>`;
+      `<span class="scores">${others}${dqTag}</span>`;
     wrap.append(row);
   }
   return card("Recent results", "📅", "c-purple", wrap);
@@ -256,6 +275,7 @@ function render(data) {
   cards.append(listCountCard("Wooden spoons", "🥄", "c-amber", data.woodenSpoons, "Spoons"));
   cards.append(listCountCard("Bridesmaids", "🥈", "c-blue", data.bridesmaids, "2nds"));
   cards.append(listCountCard("7-day form", "⚡", "c-green", data.form, "Wins"));
+  cards.append(dqCard(data.disqualifications || []));
   cards.append(groupPBCard(data.groupPB));
   cards.append(droughtCard(data.drought));
   const recent = recentCard(data.recentResults);
@@ -282,4 +302,58 @@ async function boot() {
   }
 }
 
+function wireUploader() {
+  const btn = $("upload-btn");
+  if (!btn) return;
+  const status = $("upload-status");
+  const show = (cls, html) => {
+    status.hidden = false;
+    status.className = "uploader-status " + cls;
+    status.innerHTML = html;
+  };
+  btn.addEventListener("click", async () => {
+    const token = $("admin-token").value.trim();
+    const fileInput = $("zip-file");
+    const file = fileInput.files && fileInput.files[0];
+    if (!token) return show("warn", "Enter the admin token first.");
+    if (!file) return show("warn", "Choose a WhatsApp export <code>.zip</code> (or <code>.txt</code>).");
+
+    btn.disabled = true;
+    show("busy", `⏳ Uploading &amp; processing <strong>${esc(file.name)}</strong>… this can take a minute while scores are read.`);
+    try {
+      const body = new FormData();
+      body.append("files", file);
+      const res = await fetch("/api/upload-export", {
+        method: "POST",
+        headers: { "x-admin-token": token },
+        body,
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.error || `Upload failed (${res.status})`);
+      }
+      const r = payload.summary || {};
+      const lines = [
+        `✅ Done. Parsed <strong>${num(r.parsedMessages ?? 0)}</strong> messages,`,
+        `added <strong>${num(r.newImages ?? 0)}</strong> new pictures,`,
+        `resolved <strong>${num(r.resolvedDays ?? 0)}</strong> day(s),`,
+        `decided <strong>${num(r.decidedRounds ?? 0)}</strong> winner(s).`,
+      ].join(" ");
+      let extra = "";
+      if (Array.isArray(payload.announcements) && payload.announcements.length) {
+        extra =
+          `<pre class="announce">${esc(payload.announcements.join("\n\n"))}</pre>`;
+      }
+      show("ok", lines + extra);
+      fileInput.value = "";
+      boot();
+    } catch (err) {
+      show("err", "❌ " + esc(err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+wireUploader();
 boot();

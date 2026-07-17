@@ -28,6 +28,34 @@
     </header>
 
     <main class="wrap" id="app">
+      <div class="disclaimer" id="disclaimer">
+        <span class="disclaimer-mark">📸</span>
+        <div>
+          <strong>Screenshots only.</strong> A score only counts if you post a
+          <em>picture</em> of it. Your <em>first</em> picture each day is your
+          official GeoRankl score; later pictures (Geopaint, Geodle, Geodecide…)
+          are ignored unless they're needed to settle a tie-break. No picture on a
+          day &rarr; you're marked <strong>DQ</strong> and score nothing.
+        </div>
+      </div>
+
+      <details class="uploader" id="uploader">
+        <summary>⬆️ Upload a WhatsApp export (admin)</summary>
+        <div class="uploader-body">
+          <p class="uploader-help">
+            In WhatsApp: open the group → <em>Export chat</em> → <em>Attach media</em>,
+            then drop the resulting <code>.zip</code> here. Re-uploading the whole
+            chat is safe — only new days are added, never double-counted.
+          </p>
+          <div class="uploader-row">
+            <input type="password" id="admin-token" placeholder="Admin token" autocomplete="off" />
+            <input type="file" id="zip-file" accept=".zip,.txt" />
+            <button id="upload-btn" type="button">Process</button>
+          </div>
+          <div class="uploader-status" id="upload-status" hidden></div>
+        </div>
+      </details>
+
       <div class="loading" id="loading">Loading the league…</div>
       <div class="error" id="error" hidden></div>
       <section class="stat-strip" id="summary" hidden></section>
