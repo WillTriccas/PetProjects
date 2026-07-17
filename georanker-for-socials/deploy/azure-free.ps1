@@ -49,7 +49,7 @@ $webhookSecret = [guid]::NewGuid().ToString("N")
 # ── Secret resolution: CLI param > .env file > environment variable ──────────
 # So you can keep GITHUB_TOKEN / ADMIN_TOKEN (etc.) in .env and just run the
 # script with no tokens on the command line.
-$envFile = Join-Path $PSScriptRoot ".." ".env"
+$envFile = Join-Path (Join-Path $PSScriptRoot "..") ".env"
 $dotenv = @{}
 if (Test-Path $envFile) {
   Write-Host "==> Reading secrets from $envFile" -ForegroundColor Cyan
