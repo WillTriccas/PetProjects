@@ -4,11 +4,30 @@
 # for the fully-commented Windows version. Run from georanker-for-socials/.
 #
 # Prereqs: `az login`, and config/roster.json created.
+# Secrets (GITHUB_TOKEN, ADMIN_TOKEN, TELEGRAM_*) are read from .env if present,
+# or from the environment. So the simplest run is just:
+#   APP_NAME=georanker-you ./deploy/azure-free.sh
 # Usage:
 #   APP_NAME=georanker-you \
 #   TELEGRAM_BOT_TOKEN=123:ABC TELEGRAM_CHAT_ID=-1001234567890 \
 #   ./deploy/azure-free.sh
 set -euo pipefail
+
+# ── Load secrets from .env (if present) so they don't need to be exported ──────
+# Precedence: existing environment variable > .env value. CLI/env always wins.
+ENV_FILE="$(dirname "$0")/../.env"
+if [ -f "$ENV_FILE" ]; then
+  echo "==> Reading secrets from $ENV_FILE"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|\#*) continue;; esac
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="$(echo "$key" | xargs)"
+    val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
+    # Only set if not already provided in the environment.
+    if [ -z "${!key:-}" ]; then export "$key=$val"; fi
+  done < "$ENV_FILE"
+fi
 
 APP_NAME="${APP_NAME:?set APP_NAME}"
 RESOURCE_GROUP="${RESOURCE_GROUP:-georanker-rg}"

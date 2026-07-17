@@ -224,13 +224,17 @@ always-on, or ship the included `Dockerfile` to Azure Container Apps.
 
 ```powershell
 # 1. Create config/roster.json (copy config/roster.example.json) and az login
-# 2. From georanker-for-socials/:
+# 2. Put your secrets in .env (GITHUB_TOKEN, ADMIN_TOKEN, optionally the Telegram
+#    ones) — the deploy reads them automatically, so no tokens on the command line:
+./deploy/azure-free.ps1 -AppName georanker-<you>
+
+# (equivalently, pass them explicitly to override .env)
 ./deploy/azure-free.ps1 -AppName georanker-<you> `
-    -GithubToken "ghp_..." `           # required — reads the screenshots (models scope)
-    -AdminToken "pick-a-long-secret" ` # unlocks the dashboard upload panel
-    -TelegramBotToken "123:ABC" -TelegramChatId "-1001234567890"  # optional
+    -GithubToken "github_pat_..." -AdminToken "your-long-secret"
 ```
 
+Secrets are resolved **CLI parameter → `.env` file → environment variable**, so
+keeping them in `.env` (which is gitignored) is the least error-prone route.
 `GITHUB_TOKEN` is **required** because scoring is screenshot-only (a GitHub PAT
 with the `models` scope reads each picture). `ADMIN_TOKEN` protects — and enables
 — the dashboard's upload panel; set it to a long random secret. The Telegram

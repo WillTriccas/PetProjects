@@ -9,6 +9,15 @@
     - config/roster.json created (copy config/roster.example.json)
     - Run from the georanker-for-socials/ folder.
 
+  Secrets (GITHUB_TOKEN, ADMIN_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) are
+  resolved as:  CLI parameter  >  .env file  >  environment variable.
+  So the simplest flow is to put them in .env (already gitignored) and run:
+
+    ./deploy/azure-free.ps1 -AppName georanker-<yourname>
+
+  ...with no tokens on the command line. Pass a -GithubToken/-AdminToken param
+  only to override what's in .env.
+
   Usage (PowerShell):
     ./deploy/azure-free.ps1 -AppName georanker-<yourname> `
         -TelegramBotToken "123:ABC" -TelegramChatId "-1001234567890"
@@ -36,6 +45,35 @@ param(
 $ErrorActionPreference = "Stop"
 $publicUrl = "https://$AppName.azurewebsites.net"
 $webhookSecret = [guid]::NewGuid().ToString("N")
+
+# ── Secret resolution: CLI param > .env file > environment variable ──────────
+# So you can keep GITHUB_TOKEN / ADMIN_TOKEN (etc.) in .env and just run the
+# script with no tokens on the command line.
+$envFile = Join-Path $PSScriptRoot ".." ".env"
+$dotenv = @{}
+if (Test-Path $envFile) {
+  Write-Host "==> Reading secrets from $envFile" -ForegroundColor Cyan
+  foreach ($line in Get-Content $envFile) {
+    $trimmed = $line.Trim()
+    if ($trimmed -eq "" -or $trimmed.StartsWith("#")) { continue }
+    $eq = $trimmed.IndexOf("=")
+    if ($eq -lt 1) { continue }
+    $key = $trimmed.Substring(0, $eq).Trim()
+    $val = $trimmed.Substring($eq + 1).Trim().Trim('"').Trim("'")
+    $dotenv[$key] = $val
+  }
+}
+function Resolve-Secret([string]$current, [string]$name) {
+  if ($current) { return $current }                 # explicit CLI param wins
+  if ($dotenv.ContainsKey($name) -and $dotenv[$name]) { return $dotenv[$name] }  # then .env
+  $fromEnv = [Environment]::GetEnvironmentVariable($name)
+  if ($fromEnv) { return $fromEnv }                 # then process env var
+  return ""
+}
+$GithubToken      = Resolve-Secret $GithubToken      "GITHUB_TOKEN"
+$AdminToken       = Resolve-Secret $AdminToken       "ADMIN_TOKEN"
+$TelegramBotToken = Resolve-Secret $TelegramBotToken "TELEGRAM_BOT_TOKEN"
+$TelegramChatId   = Resolve-Secret $TelegramChatId   "TELEGRAM_CHAT_ID"
 
 Write-Host "==> Resource group: $ResourceGroup ($Location)" -ForegroundColor Cyan
 az group create --name $ResourceGroup --location $Location --output none
