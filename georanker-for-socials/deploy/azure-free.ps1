@@ -1,7 +1,7 @@
 <#
   Deploy GeoRanker for socials to a cheap Azure App Service (Linux, Node) as a
   *code* deployment built on the server by Oryx. Defaults to the B1 Basic SKU
-  (~£10/mo, always-on) which is comfortably covered by Visual Studio credits and
+  (~10 GBP/mo, always-on) which is comfortably covered by Visual Studio credits and
   avoids the F1 free-tier quota that many subscriptions have set to zero. Pass
   -Sku F1 to try the free tier if your subscription has F1 quota.
 
@@ -48,7 +48,7 @@ $ErrorActionPreference = "Stop"
 $publicUrl = "https://$AppName.azurewebsites.net"
 $webhookSecret = [guid]::NewGuid().ToString("N")
 
-# ── Secret resolution: CLI param > .env file > environment variable ──────────
+# -- Secret resolution: CLI param > .env file > environment variable ----------
 # So you can keep GITHUB_TOKEN / ADMIN_TOKEN (etc.) in .env and just run the
 # script with no tokens on the command line.
 $envFile = Join-Path (Join-Path $PSScriptRoot "..") ".env"
@@ -117,7 +117,7 @@ if ($AdminToken)       { $settings += "ADMIN_TOKEN=$AdminToken" }
 az webapp config appsettings set --name $AppName --resource-group $ResourceGroup `
   --settings $settings --output none
 
-Write-Host "==> Packaging app for deployment…" -ForegroundColor Cyan
+Write-Host "==> Packaging app for deployment..." -ForegroundColor Cyan
 $appRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $staging = Join-Path ([System.IO.Path]::GetTempPath()) ("georanker-deploy-" + [guid]::NewGuid().ToString("N"))
 $zipPath = "$staging.zip"
@@ -130,14 +130,14 @@ if ($LASTEXITCODE -ge 8) { throw "robocopy failed staging deploy files (exit $LA
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zipPath -Force
 
-Write-Host "==> Deploying code (Oryx build on server)… this can take several minutes" -ForegroundColor Cyan
+Write-Host "==> Deploying code (Oryx build on server)... this can take several minutes" -ForegroundColor Cyan
 az webapp deploy --name $AppName --resource-group $ResourceGroup `
   --src-path $zipPath --type zip
 $deployExit = $LASTEXITCODE
 
 Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-if ($deployExit -ne 0) { throw "az webapp deploy failed (exit $deployExit) — see output above." }
+if ($deployExit -ne 0) { throw "az webapp deploy failed (exit $deployExit) -- see output above." }
 
 Write-Host ""
 Write-Host "Done! Dashboard:  $publicUrl" -ForegroundColor Green
