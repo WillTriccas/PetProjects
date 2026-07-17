@@ -27,3 +27,6 @@ logs/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local roster (public repo — keep real names/JIDs private)
+config/roster.json
