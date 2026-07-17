@@ -40,12 +40,16 @@ EXTRACTOR="${EXTRACTOR:-github-models}"
 PUBLIC_URL="https://${APP_NAME}.azurewebsites.net"
 WEBHOOK_SECRET="$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
 
-echo "==> Resource group: $RESOURCE_GROUP ($LOCATION)"
-az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
+echo "==> Resource group: $RESOURCE_GROUP"
+if [ "$(az group exists --name "$RESOURCE_GROUP")" = "true" ]; then
+  echo "    (already exists; leaving its location as-is)"
+else
+  az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
+fi
 
-echo "==> Linux plan: $PLAN_NAME (SKU $SKU)"
+echo "==> Linux plan: $PLAN_NAME (SKU $SKU, $LOCATION)"
 az appservice plan create --name "$PLAN_NAME" --resource-group "$RESOURCE_GROUP" \
-  --sku "$SKU" --is-linux --output none
+  --location "$LOCATION" --sku "$SKU" --is-linux --output none
 
 echo "==> Web app: $APP_NAME ($RUNTIME)"
 az webapp create --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \

@@ -77,12 +77,16 @@ $AdminToken       = Resolve-Secret $AdminToken       "ADMIN_TOKEN"
 $TelegramBotToken = Resolve-Secret $TelegramBotToken "TELEGRAM_BOT_TOKEN"
 $TelegramChatId   = Resolve-Secret $TelegramChatId   "TELEGRAM_CHAT_ID"
 
-Write-Host "==> Resource group: $ResourceGroup ($Location)" -ForegroundColor Cyan
-az group create --name $ResourceGroup --location $Location --output none
+Write-Host "==> Resource group: $ResourceGroup" -ForegroundColor Cyan
+if ((az group exists --name $ResourceGroup) -eq "true") {
+  Write-Host "    (already exists; leaving its location as-is)"
+} else {
+  az group create --name $ResourceGroup --location $Location --output none
+}
 
-Write-Host "==> Linux plan: $PlanName (SKU $Sku)" -ForegroundColor Cyan
+Write-Host "==> Linux plan: $PlanName (SKU $Sku, $Location)" -ForegroundColor Cyan
 az appservice plan create --name $PlanName --resource-group $ResourceGroup `
-  --sku $Sku --is-linux --output none
+  --location $Location --sku $Sku --is-linux --output none
 
 Write-Host "==> Web app: $AppName ($Runtime)" -ForegroundColor Cyan
 az webapp create --name $AppName --resource-group $ResourceGroup `
