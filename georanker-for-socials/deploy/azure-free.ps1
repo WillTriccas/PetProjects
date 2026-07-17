@@ -1,8 +1,9 @@
 <#
-  Deploy GeoRanker for socials to the CHEAPEST Azure App Service (Free F1, Linux,
-  Node) as a *code* deployment built on the server by Oryx. No credit card burn:
-  F1 is free. Structured so you can later `az webapp update --plan <B1 plan>` for
-  always-on, or switch to the Dockerfile on Container Apps — with zero code change.
+  Deploy GeoRanker for socials to a cheap Azure App Service (Linux, Node) as a
+  *code* deployment built on the server by Oryx. Defaults to the B1 Basic SKU
+  (~£10/mo, always-on) which is comfortably covered by Visual Studio credits and
+  avoids the F1 free-tier quota that many subscriptions have set to zero. Pass
+  -Sku F1 to try the free tier if your subscription has F1 quota.
 
   Prereqs:
     - Azure CLI installed and logged in:  az login
@@ -24,8 +25,8 @@
 
   Notes:
     * SQLite persists under /home (survives restarts on App Service).
-    * F1 sleeps when idle & has a 60 CPU-min/day quota, so the bot runs in
-      WEBHOOK mode: any inbound Telegram message or dashboard hit wakes it.
+    * B1 is always-on, so no idle sleep or CPU-minute cap; the bot runs in
+      WEBHOOK mode and stays responsive.
     * The app self-registers its Telegram webhook on startup from PUBLIC_URL.
 #>
 param(
@@ -34,6 +35,7 @@ param(
   [string] $Location = "uksouth",
   [string] $PlanName = "georanker-free-plan",
   [string] $Runtime = "NODE:22-lts",
+  [string] $Sku = "B1",
   [string] $Timezone = "Europe/London",
   [string] $Extractor = "github-models",
   [string] $GithubToken = "",
@@ -78,9 +80,9 @@ $TelegramChatId   = Resolve-Secret $TelegramChatId   "TELEGRAM_CHAT_ID"
 Write-Host "==> Resource group: $ResourceGroup ($Location)" -ForegroundColor Cyan
 az group create --name $ResourceGroup --location $Location --output none
 
-Write-Host "==> Free (F1) Linux plan: $PlanName" -ForegroundColor Cyan
+Write-Host "==> Linux plan: $PlanName (SKU $Sku)" -ForegroundColor Cyan
 az appservice plan create --name $PlanName --resource-group $ResourceGroup `
-  --sku F1 --is-linux --output none
+  --sku $Sku --is-linux --output none
 
 Write-Host "==> Web app: $AppName ($Runtime)" -ForegroundColor Cyan
 az webapp create --name $AppName --resource-group $ResourceGroup `
@@ -89,6 +91,11 @@ az webapp create --name $AppName --resource-group $ResourceGroup `
 # Build on the server (Oryx runs `npm install` + `npm run build`) and start via `npm start`.
 az webapp config set --name $AppName --resource-group $ResourceGroup `
   --startup-file "npm start" --output none
+if ($Sku -ne "F1") {
+  # Always-on keeps the webhook responsive (not available on the F1 free tier).
+  az webapp config set --name $AppName --resource-group $ResourceGroup `
+    --always-on true --output none
+}
 
 Write-Host "==> App settings" -ForegroundColor Cyan
 $settings = @(
@@ -110,9 +117,27 @@ if ($AdminToken)       { $settings += "ADMIN_TOKEN=$AdminToken" }
 az webapp config appsettings set --name $AppName --resource-group $ResourceGroup `
   --settings $settings --output none
 
-Write-Host "==> Deploying code (Oryx build)…" -ForegroundColor Cyan
-az webapp up --name $AppName --resource-group $ResourceGroup `
-  --plan $PlanName --sku F1 --runtime $Runtime --os-type Linux
+Write-Host "==> Packaging app for deployment…" -ForegroundColor Cyan
+$appRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$staging = Join-Path ([System.IO.Path]::GetTempPath()) ("georanker-deploy-" + [guid]::NewGuid().ToString("N"))
+$zipPath = "$staging.zip"
+# Stage source only (Oryx installs deps + builds on the server). Exclude heavy
+# / local-only stuff: node_modules, dist, data (local SQLite), .git, secrets.
+robocopy $appRoot $staging /E /NFL /NDL /NJH /NJS /NP `
+  /XD node_modules dist data .git .github `
+  /XF .env "*.sqlite" "*.sqlite-*" "*.log" | Out-Null
+if ($LASTEXITCODE -ge 8) { throw "robocopy failed staging deploy files (exit $LASTEXITCODE)" }
+if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zipPath -Force
+
+Write-Host "==> Deploying code (Oryx build on server)… this can take several minutes" -ForegroundColor Cyan
+az webapp deploy --name $AppName --resource-group $ResourceGroup `
+  --src-path $zipPath --type zip
+$deployExit = $LASTEXITCODE
+
+Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+if ($deployExit -ne 0) { throw "az webapp deploy failed (exit $deployExit) — see output above." }
 
 Write-Host ""
 Write-Host "Done! Dashboard:  $publicUrl" -ForegroundColor Green

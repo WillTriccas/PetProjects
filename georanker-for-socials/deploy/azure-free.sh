@@ -34,6 +34,7 @@ RESOURCE_GROUP="${RESOURCE_GROUP:-georanker-rg}"
 LOCATION="${LOCATION:-uksouth}"
 PLAN_NAME="${PLAN_NAME:-georanker-free-plan}"
 RUNTIME="${RUNTIME:-NODE:22-lts}"
+SKU="${SKU:-B1}"
 TIMEZONE="${TIMEZONE:-Europe/London}"
 EXTRACTOR="${EXTRACTOR:-github-models}"
 PUBLIC_URL="https://${APP_NAME}.azurewebsites.net"
@@ -42,9 +43,9 @@ WEBHOOK_SECRET="$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
 echo "==> Resource group: $RESOURCE_GROUP ($LOCATION)"
 az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
 
-echo "==> Free (F1) Linux plan: $PLAN_NAME"
+echo "==> Linux plan: $PLAN_NAME (SKU $SKU)"
 az appservice plan create --name "$PLAN_NAME" --resource-group "$RESOURCE_GROUP" \
-  --sku F1 --is-linux --output none
+  --sku "$SKU" --is-linux --output none
 
 echo "==> Web app: $APP_NAME ($RUNTIME)"
 az webapp create --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
@@ -52,6 +53,10 @@ az webapp create --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
 
 az webapp config set --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
   --startup-file "npm start" --output none
+if [ "$SKU" != "F1" ]; then
+  az webapp config set --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
+    --always-on true --output none
+fi
 
 echo "==> App settings"
 SETTINGS=(
@@ -73,9 +78,19 @@ SETTINGS=(
 az webapp config appsettings set --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
   --settings "${SETTINGS[@]}" --output none
 
-echo "==> Deploying code (Oryx build)…"
-az webapp up --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
-  --plan "$PLAN_NAME" --sku F1 --runtime "$RUNTIME" --os-type Linux
+echo "==> Packaging app for deployment…"
+STAGING="$(mktemp -d)"
+ZIP_PATH="$(mktemp -u).zip"
+# Stage source only (Oryx installs deps + builds on the server).
+rsync -a --exclude node_modules --exclude dist --exclude data --exclude .git \
+  --exclude .github --exclude .env --exclude '*.sqlite*' --exclude '*.log' \
+  ./ "$STAGING/" 2>/dev/null || cp -r ./ "$STAGING/"
+( cd "$STAGING" && zip -qr "$ZIP_PATH" . )
+
+echo "==> Deploying code (Oryx build on server)… this can take several minutes"
+az webapp deploy --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
+  --src-path "$ZIP_PATH" --type zip
+rm -rf "$STAGING" "$ZIP_PATH"
 
 echo ""
 echo "Done! Dashboard:  $PUBLIC_URL"

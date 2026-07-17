@@ -216,11 +216,15 @@ The hosted process (`src/web/main.ts`) serves:
 
 ### Deploy to Azure — cheapest tier, upgrade-ready
 
-Deploys as **code** to a **Free F1** Linux App Service (Oryx builds it on the
-server). SQLite persists under `/home`, and because F1 sleeps when idle the
-Telegram bot runs in **webhook** mode so any message or dashboard hit wakes it.
-It's architected to upgrade later with zero code change — bump the plan to B1 for
-always-on, or ship the included `Dockerfile` to Azure Container Apps.
+Deploys as **code** to a Linux App Service (Oryx builds it on the server). It
+defaults to the **B1 Basic** SKU (~£10/mo, always-on) — comfortably covered by
+Visual Studio subscription credits, and it sidesteps the **F1 free-tier quota
+that many subscriptions have set to zero** (that shows up as
+`Operation cannot be completed without additional quota … Current Limit (Total
+VMs): 0`). If your subscription *does* have F1 quota and you want free, pass
+`-Sku F1`. SQLite persists under `/home`. The Telegram bot runs in **webhook**
+mode; on B1 it's always-on so it stays responsive. You can also ship the included
+`Dockerfile` to Azure Container Apps with zero code change.
 
 ```powershell
 # 1. Create config/roster.json (copy config/roster.example.json) and az login
