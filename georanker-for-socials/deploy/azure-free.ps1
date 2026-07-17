@@ -32,7 +32,7 @@
 param(
   [Parameter(Mandatory = $true)] [string] $AppName,
   [string] $ResourceGroup = "georanker-rg",
-  [string] $Location = "uksouth",
+  [string] $Location = "ukwest",
   [string] $PlanName = "georanker-free-plan",
   [string] $Runtime = "NODE:22-lts",
   [string] $Sku = "B1",

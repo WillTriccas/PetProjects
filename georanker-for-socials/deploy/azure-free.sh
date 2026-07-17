@@ -31,7 +31,7 @@ fi
 
 APP_NAME="${APP_NAME:?set APP_NAME}"
 RESOURCE_GROUP="${RESOURCE_GROUP:-georanker-rg}"
-LOCATION="${LOCATION:-uksouth}"
+LOCATION="${LOCATION:-ukwest}"
 PLAN_NAME="${PLAN_NAME:-georanker-free-plan}"
 RUNTIME="${RUNTIME:-NODE:22-lts}"
 SKU="${SKU:-B1}"
