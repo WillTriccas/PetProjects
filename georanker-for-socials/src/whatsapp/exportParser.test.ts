@@ -59,6 +59,22 @@ describe("parseExport", () => {
     expect(msgs[0]!.dayKey).not.toBe(msgs[1]!.dayKey);
   });
 
+  it("attributes a bare attachment line that starts with a U+200E mark to its own sender", () => {
+    // WhatsApp prefixes caption-less media lines with a leading LRM (U+200E)
+    // before the "[" — previously this broke the header match and mis-attributed
+    // the photo to the PREVIOUS speaker.
+    const txt = [
+      "[12/07/2026, 18:23:45] Alice: nice one",
+      "\u200e[12/07/2026, 18:24:01] Bob: \u200e<attached: 00000042-PHOTO-2026-07-12.jpg>",
+    ].join("\n");
+    const msgs = parseExport(txt);
+    expect(msgs).toHaveLength(2);
+    expect(msgs[1]).toMatchObject({
+      sender: "Bob",
+      attachedFile: "00000042-PHOTO-2026-07-12.jpg",
+    });
+  });
+
   it("normalises an unambiguous US-style date as month-first", () => {
     const msgs = parseExport("[07/13/2026, 6:23:45 PM] Alice: 100");
     expect(msgs[0]!.isoDate).toBe("2026-07-13");

@@ -43,7 +43,13 @@ interface HeaderMatch {
 }
 
 function matchHeader(line: string): HeaderMatch | null {
-  const m = IOS_HEADER.exec(line) ?? ANDROID_HEADER.exec(line);
+  // WhatsApp prefixes attachment-only lines (a bare photo/video with no caption)
+  // with a U+200E LRM mark BEFORE the "[" timestamp. Strip any leading bidi/
+  // direction marks first, otherwise the `^\[` anchor fails and the line is
+  // mistaken for a continuation of the previous message — silently attributing
+  // the media to the wrong sender.
+  const cleaned = line.replace(/^[\u200e\u200f\u202a-\u202e\ufeff]+/, "");
+  const m = IOS_HEADER.exec(cleaned) ?? ANDROID_HEADER.exec(cleaned);
   if (!m) return null;
   return {
     dayKey: m[1]!,
