@@ -8,10 +8,18 @@ interface GitHubModelsOptions {
 }
 
 const SYSTEM_PROMPT =
-  "You extract the player's final numeric score from a screenshot of the game GeoRankl. " +
-  "Respond with ONLY a compact JSON object of the form {\"score\": <number>} where <number> " +
-  "is the player's total score as an integer. If you cannot confidently determine a score, " +
-  'respond with {"score": null}. Do not include any other text.';
+  "You read a single number from a GeoRankl result screenshot. The screenshot shows a rounded " +
+  'card with two labelled figures: on the left "Total Score" and on the right "Global Rank". ' +
+  'Under "Total Score" there is a large bold number followed by a lighter "/ <par>" value ' +
+  '(for example "650 / 658" means the score is 650 and the daily maximum is 658). Return ONLY ' +
+  "the player's Total Score — the large bold number to the LEFT of the slash. Never return the " +
+  'par value after the slash, and never return the Global Rank (the "#" number on the right). ' +
+  "GeoRankl scores are whole numbers, typically between 0 and 700. Respond with ONLY a compact " +
+  'JSON object {"score": <integer>}, or {"score": null} if no Total Score is visible. No other text.';
+
+const USER_PROMPT =
+  'Read the "Total Score" value (the big number to the left of the slash). ' +
+  'Ignore Global Rank and the "/par" value.';
 
 /**
  * Image score extractor backed by GitHub Models (OpenAI-compatible chat
@@ -39,7 +47,7 @@ export class GitHubModelsExtractor implements ImageScoreExtractor {
         {
           role: "user",
           content: [
-            { type: "text", text: "What is the final score in this GeoRankl screenshot?" },
+            { type: "text", text: USER_PROMPT },
             { type: "image_url", image_url: { url: dataUri } },
           ],
         },
