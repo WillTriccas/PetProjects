@@ -523,6 +523,27 @@ export class Repository {
     this.db.exec(`DELETE FROM records`);
   }
 
+  /**
+   * Wipe all derived score data — image submissions (and their dedupe keys),
+   * rounds, points, playoff submissions, DQs and records — while keeping the
+   * player roster. After this, re-uploading the full WhatsApp export re-extracts
+   * every screenshot from scratch, so it's the way to rebuild the season once the
+   * extractor/attribution has been fixed. Players are preserved.
+   */
+  resetScoreData(): void {
+    this.db.exec(`
+      BEGIN;
+      DELETE FROM records;
+      DELETE FROM disqualifications;
+      DELETE FROM points;
+      DELETE FROM submissions;
+      DELETE FROM image_submissions;
+      DELETE FROM processed_messages;
+      DELETE FROM rounds;
+      COMMIT;
+    `);
+  }
+
   upsertRecord(rec: {
     key: string;
     metric: number;

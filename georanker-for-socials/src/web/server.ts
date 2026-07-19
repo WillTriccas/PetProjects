@@ -198,6 +198,18 @@ export function createApp(deps: WebServerDeps): Express {
     });
   });
 
+  // ── Admin: wipe all derived score data (keep roster) for a clean re-extract ─
+  // POST /api/admin/reset-scores  { confirm: "RESET" }
+  app.post("/api/admin/reset-scores", requireAdmin, (req, res) => {
+    const body = req.body as { confirm?: string };
+    if (body?.confirm !== "RESET") {
+      res.status(400).json({ error: 'Send { "confirm": "RESET" } to wipe all scores.' });
+      return;
+    }
+    repo.resetScoreData();
+    res.json({ ok: true, message: "All score data cleared. Re-upload the export to rebuild." });
+  });
+
   // ── Static dashboard (served last so /api/* wins) ───────────────────────
   app.use(express.static(PUBLIC_DIR, { extensions: ["html"] }));
   return app;
