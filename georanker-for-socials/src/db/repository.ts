@@ -120,6 +120,71 @@ export class Repository {
       .get(id) as RoundRow | undefined;
   }
 
+  /** The most recent round for a given game date, if one exists. */
+  getRoundByDate(gameDate: string): RoundRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM rounds WHERE game_date = ? ORDER BY id DESC LIMIT 1`)
+      .get(gameDate) as RoundRow | undefined;
+  }
+
+  /**
+   * Administratively set (or clear) the winner of a game day and rebuild the
+   * single point for that round. Creates the round if it doesn't exist yet.
+   * Passing `winnerPlayerId: null` records the day as played with no winner
+   * (e.g. an unbreakable tie or a day nobody contested). When `winningScore` is
+   * given, the winner's level-0 GeoRankl score is recorded too, so the dashboard
+   * shows an accurate winning score. This is the manual correction path used when
+   * the vision extractor misreads a day.
+   */
+  overrideDayResult(params: {
+    gameDate: string;
+    winnerPlayerId: number | null;
+    winningScore?: number | null;
+  }): void {
+    const tx = this.db;
+    tx.exec("BEGIN");
+    try {
+      const existing = tx
+        .prepare(`SELECT id FROM rounds WHERE game_date = ? ORDER BY id DESC LIMIT 1`)
+        .get(params.gameDate) as { id: number } | undefined;
+      const roundId = existing
+        ? existing.id
+        : Number(
+            tx
+              .prepare(
+                `INSERT INTO rounds (game_date, status, playoff_level) VALUES (?, 'resolved', 0)`,
+              )
+              .run(params.gameDate).lastInsertRowid,
+          );
+
+      tx.prepare(
+        `UPDATE rounds SET status = 'resolved', winner_player_id = ?, resolved_at = datetime('now') WHERE id = ?`,
+      ).run(params.winnerPlayerId, roundId);
+
+      // Rebuild the round's single point from scratch so re-running is idempotent.
+      tx.prepare(`DELETE FROM points WHERE round_id = ?`).run(roundId);
+      if (params.winnerPlayerId !== null) {
+        tx.prepare(
+          `INSERT INTO points (player_id, round_id, points) VALUES (?, ?, 1)
+           ON CONFLICT(round_id) DO NOTHING`,
+        ).run(params.winnerPlayerId, roundId);
+
+        if (params.winningScore !== undefined && params.winningScore !== null) {
+          tx.prepare(
+            `INSERT INTO submissions (round_id, player_id, playoff_level, source, raw_ref, score, submitted_at)
+             VALUES (?, ?, 0, 'image', NULL, ?, NULL)
+             ON CONFLICT(round_id, player_id, playoff_level)
+             DO UPDATE SET score = excluded.score`,
+          ).run(roundId, params.winnerPlayerId, params.winningScore);
+        }
+      }
+      tx.exec("COMMIT");
+    } catch (err) {
+      tx.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
   openRound(gameDate: string): RoundRow {
     const info = this.db
       .prepare(

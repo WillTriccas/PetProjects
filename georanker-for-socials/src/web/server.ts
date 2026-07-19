@@ -19,6 +19,7 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import multer from "multer";
 import AdmZip from "adm-zip";
 import type { AppConfig } from "../config.js";
+import { normaliseName, rosterKeyFor } from "../config.js";
 import { logger } from "../logger.js";
 import type { Repository } from "../db/repository.js";
 import { StatsService } from "../analytics/statsService.js";
@@ -140,8 +141,64 @@ export function createApp(deps: WebServerDeps): Express {
     }
   });
 
+  // ── Admin: manually override a day's result (fix vision misreads) ────────
+  // POST /api/admin/override-days  { days: [{ date, winner, score? }] }
+  // winner is a roster display name or alias; null / "none" clears the winner.
+  app.post("/api/admin/override-days", requireAdmin, (req, res) => {
+    const body = req.body as {
+      days?: Array<{ date?: string; winner?: string | null; score?: number | null }>;
+    };
+    const days = body?.days;
+    if (!Array.isArray(days) || days.length === 0) {
+      res.status(400).json({ error: "Provide { days: [{ date, winner, score? }] }." });
+      return;
+    }
+    const applied: Array<{ date: string; winner: string | null; score: number | null }> = [];
+    const errors: Array<{ date: string; error: string }> = [];
+    for (const d of days) {
+      if (!d.date) {
+        errors.push({ date: String(d.date), error: "missing date" });
+        continue;
+      }
+      let winnerPlayerId: number | null = null;
+      let winnerName: string | null = null;
+      const raw = (d.winner ?? "").trim();
+      if (raw && raw.toLowerCase() !== "none" && raw.toLowerCase() !== "null") {
+        const rosterPlayer = config.playersByName.get(normaliseName(raw));
+        if (!rosterPlayer) {
+          errors.push({ date: d.date, error: `unknown player "${raw}"` });
+          continue;
+        }
+        const dbPlayer = repo.getPlayerByRosterKey(rosterKeyFor(rosterPlayer));
+        if (!dbPlayer) {
+          errors.push({ date: d.date, error: `player not in DB "${raw}"` });
+          continue;
+        }
+        winnerPlayerId = dbPlayer.id;
+        winnerName = dbPlayer.display_name;
+      }
+      try {
+        repo.overrideDayResult({
+          gameDate: d.date,
+          winnerPlayerId,
+          winningScore: d.score ?? null,
+        });
+        applied.push({ date: d.date, winner: winnerName, score: d.score ?? null });
+      } catch (err) {
+        errors.push({ date: d.date, error: (err as Error).message });
+      }
+    }
+    // Recompute the hall of records from the corrected history.
+    new StatsService(repo).recomputeRecords();
+    res.json({
+      ok: errors.length === 0,
+      applied,
+      errors,
+      standings: formatTally(repo.getTally()),
+    });
+  });
+
   // ── Static dashboard (served last so /api/* wins) ───────────────────────
   app.use(express.static(PUBLIC_DIR, { extensions: ["html"] }));
-
   return app;
 }
