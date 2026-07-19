@@ -19,7 +19,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
-import { normaliseName, rosterKeyFor, type AppConfig } from "../config.js";
+import { rosterKeyFor, matchSenderToPlayer, type AppConfig } from "../config.js";
 import { logger } from "../logger.js";
 import type { Repository } from "../db/repository.js";
 import type { ImageSubmissionRow } from "../db/models.js";
@@ -38,6 +38,10 @@ export interface ExportRunResult {
   resolvedDays: number;
   /** Days that produced a winner in this run. */
   decidedRounds: number;
+  /** Non-image attachments (video/GIF/sticker/audio) skipped this run. */
+  skippedNonImages: number;
+  /** Sender labels that matched no roster player, with occurrence counts. */
+  unmatchedSenders: Record<string, number>;
 }
 
 /** Resolve an export input (folder or .txt) into a transcript + media dir. */
@@ -65,10 +69,23 @@ function mimeForFile(file: string): string {
     case ".webp":
       return "image/webp";
     case ".heic":
+    case ".heif":
       return "image/heic";
     default:
       return "image/jpeg";
   }
+}
+
+/**
+ * Static image file extensions we send to the vision extractor. WhatsApp exports
+ * also contain videos (.mp4), GIFs, animated stickers, voice notes (.opus) etc.;
+ * feeding those to an image model just wastes a call and returns garbage, so they
+ * are skipped entirely rather than mislabelled as JPEGs.
+ */
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"]);
+
+function isImageAttachment(file: string): boolean {
+  return IMAGE_EXTENSIONS.has(extname(file).toLowerCase());
 }
 
 /**
@@ -177,15 +194,24 @@ export async function runExport(params: {
   // ── 1. Ingest only NEW images (skip anything already stored) ──────────────
   const affectedDays = new Set<string>();
   let newImages = 0;
+  const unmatchedSenders = new Map<string, number>();
+  let skippedNonImages = 0;
 
   for (const msg of messages) {
     if (!msg.sender || !msg.attachedFile) continue; // image-only: text never counts
+    if (!isImageAttachment(msg.attachedFile)) {
+      skippedNonImages++; // video / GIF / sticker / audio — not a scoreable screenshot
+      continue;
+    }
     if (!msg.isoDate) {
       logger.warn({ sender: msg.sender }, "Skipping image with unparseable date");
       continue;
     }
-    const rosterPlayer = config.playersByName.get(normaliseName(msg.sender));
-    if (!rosterPlayer) continue;
+    const rosterPlayer = matchSenderToPlayer(config.playersByName, msg.sender);
+    if (!rosterPlayer) {
+      unmatchedSenders.set(msg.sender, (unmatchedSenders.get(msg.sender) ?? 0) + 1);
+      continue;
+    }
     const dbPlayer = repo.getPlayerByRosterKey(rosterKeyFor(rosterPlayer));
     if (!dbPlayer) continue;
 
@@ -206,6 +232,18 @@ export async function runExport(params: {
       newImages++;
       affectedDays.add(msg.isoDate);
     }
+  }
+
+  if (skippedNonImages > 0) {
+    logger.info({ skippedNonImages }, "Skipped non-image attachments (video/GIF/sticker/audio)");
+  }
+  if (unmatchedSenders.size > 0) {
+    // Surface senders that didn't map to any roster player so the operator can add
+    // an alias — otherwise their screenshots are silently dropped.
+    logger.warn(
+      { unmatched: Object.fromEntries(unmatchedSenders) },
+      "Some senders did not match any roster player; their images were skipped. Add these as aliases in roster.json.",
+    );
   }
 
   // Also resolve any image-day that somehow has no round yet (e.g. interrupted run).
@@ -249,5 +287,12 @@ export async function runExport(params: {
   stats.recomputeRecords();
 
   logger.info({ newImages, resolvedDays, decidedRounds }, "Export processing complete");
-  return { parsedMessages: messages.length, newImages, resolvedDays, decidedRounds };
+  return {
+    parsedMessages: messages.length,
+    newImages,
+    resolvedDays,
+    decidedRounds,
+    skippedNonImages,
+    unmatchedSenders: Object.fromEntries(unmatchedSenders),
+  };
 }

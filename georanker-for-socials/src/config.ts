@@ -89,6 +89,61 @@ export function normaliseName(name: string): string {
 }
 
 /**
+ * A looser key than {@link normaliseName}: additionally strips emoji, direction
+ * marks and punctuation so a WhatsApp contact saved as e.g. "Adam H 🌍" still
+ * matches the roster. Used only as a fallback when exact matching fails.
+ */
+export function fuzzyNameKey(name: string): string {
+  return name
+    .replace(/[\u200e\u200f\u202a-\u202e]/g, "")
+    .replace(/[\p{Extended_Pictographic}]/gu, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/**
+ * Resolve a WhatsApp export sender label to a roster player. WhatsApp labels
+ * each message with the contact name as saved on the *exporter's* phone, which
+ * often differs from the roster (emoji, surnames dropped, nicknames). Matching
+ * order: exact alias → fuzzy-exact → unique first-name match. Returns null when
+ * there is no match or the match is ambiguous (so the caller can log & skip).
+ */
+export function matchSenderToPlayer(
+  playersByName: Map<string, Player>,
+  sender: string,
+): Player | null {
+  const exact = playersByName.get(normaliseName(sender));
+  if (exact) return exact;
+
+  const target = fuzzyNameKey(sender);
+  if (!target) return null;
+
+  const collect = (predicate: (aliasFuzzy: string) => boolean): Player | null => {
+    const hits = new Set<Player>();
+    for (const [alias, player] of playersByName) {
+      const aliasFuzzy = fuzzyNameKey(alias);
+      if (aliasFuzzy && predicate(aliasFuzzy)) hits.add(player);
+    }
+    return hits.size === 1 ? [...hits][0]! : null;
+  };
+
+  // Whole-string fuzzy equality (e.g. "adam hewitt 🌍" -> "adam hewitt").
+  const fuzzyExact = collect((aliasFuzzy) => aliasFuzzy === target);
+  if (fuzzyExact) return fuzzyExact;
+
+  // First-name match (e.g. sender "Adam H" or alias "Adam" -> Adam Hewitt),
+  // only accepted when it resolves to exactly one player.
+  const senderFirst = target.split(" ")[0]!;
+  if (senderFirst.length >= 3) {
+    const byFirst = collect((aliasFuzzy) => aliasFuzzy.split(" ")[0] === senderFirst);
+    if (byFirst) return byFirst;
+  }
+  return null;
+}
+
+/**
  * A stable identity key for a player across live-bot and export modes. Uses the
  * WhatsApp JID when present, otherwise a slug of the display name.
  */

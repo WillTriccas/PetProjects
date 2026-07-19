@@ -32,6 +32,8 @@ export class GitHubModelsExtractor implements ImageScoreExtractor {
     const body = {
       model: this.opts.model,
       temperature: 0,
+      max_tokens: 50,
+      response_format: { type: "json_object" as const },
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -77,7 +79,11 @@ export class GitHubModelsExtractor implements ImageScoreExtractor {
       return null;
     }
 
-    return parseScoreFromModelOutput(content);
+    const score = parseScoreFromModelOutput(content);
+    if (score === null) {
+      logger.debug({ content: content.slice(0, 200) }, "Model reply had no parseable score");
+    }
+    return score;
   }
 }
 
