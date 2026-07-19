@@ -1,0 +1,49 @@
+name: Deploy GeoRanker for socials
+
+on:
+  push:
+    branches: [willtriccas-georanker-for-socials]
+    paths:
+      - "georanker-for-socials/**"
+      - ".github/workflows/deploy-georanker.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-georanker
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: georanker-for-socials
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: georanker-for-socials/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Prune dev dependencies
+        run: npm prune --omit=dev
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: georanker-will
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: georanker-for-socials
