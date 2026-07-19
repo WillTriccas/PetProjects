@@ -20,7 +20,16 @@ async function main(): Promise<void> {
   const telegramConfigured = Boolean(config.env.TELEGRAM_BOT_TOKEN && config.env.TELEGRAM_CHAT_ID);
   const canWebhook = telegramConfigured && Boolean(config.env.PUBLIC_URL);
 
-  const telegram = canWebhook ? wireTelegram(config, repo) : undefined;
+  // Wiring the Telegram bot must never take down the dashboard: a bad/placeholder
+  // token or chat id should degrade gracefully (dashboard + upload keep working).
+  let telegram: ReturnType<typeof wireTelegram> | undefined;
+  if (canWebhook) {
+    try {
+      telegram = wireTelegram(config, repo);
+    } catch (err) {
+      logger.error({ err }, "Failed to wire Telegram bot; continuing without it (dashboard still available)");
+    }
+  }
   if (telegramConfigured && !canWebhook) {
     logger.warn(
       "Telegram is configured but PUBLIC_URL is not set — the hosted web process won't receive Telegram updates. " +

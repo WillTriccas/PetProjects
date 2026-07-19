@@ -130,7 +130,11 @@ function buildNameMap(roster: Roster): Map<string, Player> {
     const names = [p.displayName, ...(p.aliases ?? [])];
     for (const name of names) {
       const key = normaliseName(name);
-      if (map.has(key)) {
+      const existing = map.get(key);
+      // A name repeated within the same player (e.g. an alias that duplicates the
+      // display name) is harmless — only a collision across *different* players is
+      // ambiguous and must be rejected.
+      if (existing && existing !== p) {
         throw new Error(
           `Ambiguous roster name "${name}" maps to more than one player; make display names and aliases unique.`,
         );
@@ -163,16 +167,24 @@ export function loadConfig(): AppConfig {
   for (const p of roster.players) {
     if (p.telegramUserId !== undefined) {
       if (playersByTelegramId.has(p.telegramUserId)) {
-        throw new Error(`Duplicate telegramUserId in roster: ${p.telegramUserId}`);
+        // Duplicate ids (often leftover placeholders) only affect Telegram routing —
+        // never fail startup over it; keep the first mapping and warn.
+        console.warn(
+          `[config] Duplicate telegramUserId in roster: ${p.telegramUserId} (ignoring "${p.displayName}" for Telegram routing)`,
+        );
+      } else {
+        playersByTelegramId.set(p.telegramUserId, p);
       }
-      playersByTelegramId.set(p.telegramUserId, p);
     }
     if (p.telegramUsername) {
       const key = p.telegramUsername.replace(/^@/, "").toLowerCase();
       if (playersByTelegramUsername.has(key)) {
-        throw new Error(`Duplicate telegramUsername in roster: ${p.telegramUsername}`);
+        console.warn(
+          `[config] Duplicate telegramUsername in roster: ${p.telegramUsername} (ignoring "${p.displayName}" for Telegram routing)`,
+        );
+      } else {
+        playersByTelegramUsername.set(key, p);
       }
-      playersByTelegramUsername.set(key, p);
     }
   }
 
