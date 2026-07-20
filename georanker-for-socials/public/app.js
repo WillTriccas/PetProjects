@@ -319,7 +319,7 @@ function wireUploader() {
     if (!file) return show("warn", "Choose a WhatsApp export <code>.zip</code> (or <code>.txt</code>).");
 
     btn.disabled = true;
-    show("busy", `⏳ Uploading &amp; processing <strong>${esc(file.name)}</strong>… this can take a minute while scores are read.`);
+    show("busy", `⏳ Uploading <strong>${esc(file.name)}</strong>…`);
     try {
       const body = new FormData();
       body.append("files", file);
@@ -332,7 +332,38 @@ function wireUploader() {
       if (!res.ok) {
         throw new Error(payload.error || `Upload failed (${res.status})`);
       }
-      const r = payload.summary || {};
+      const jobId = payload.jobId;
+      if (!jobId) throw new Error("Server did not start a processing job.");
+
+      // Poll for progress — reading images through the rate-limited vision API
+      // can take a few minutes, so the server processes in the background.
+      const poll = async () => {
+        const sres = await fetch(`/api/upload-status/${encodeURIComponent(jobId)}`, {
+          headers: { "x-admin-token": token },
+          cache: "no-store",
+        });
+        return sres.json().catch(() => ({}));
+      };
+
+      let status = await poll();
+      while (status.status === "processing") {
+        const p = status.progress || {};
+        const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+        show(
+          "busy",
+          `⏳ Reading scores from <strong>${esc(file.name)}</strong>… ` +
+            `<strong>${num(p.done || 0)}</strong>/<strong>${num(p.total || 0)}</strong> images (${pct}%). ` +
+            `This can take a few minutes — the vision API is rate-limited, so we pace the reads.`,
+        );
+        await new Promise((r) => setTimeout(r, 3000));
+        status = await poll();
+      }
+
+      if (status.status === "error") {
+        throw new Error(status.error || "Processing failed.");
+      }
+
+      const r = status.summary || {};
       const lines = [
         `✅ Done. Parsed <strong>${num(r.parsedMessages ?? 0)}</strong> messages,`,
         `added <strong>${num(r.newImages ?? 0)}</strong> new pictures,`,
@@ -340,9 +371,8 @@ function wireUploader() {
         `decided <strong>${num(r.decidedRounds ?? 0)}</strong> winner(s).`,
       ].join(" ");
       let extra = "";
-      if (Array.isArray(payload.announcements) && payload.announcements.length) {
-        extra =
-          `<pre class="announce">${esc(payload.announcements.join("\n\n"))}</pre>`;
+      if (Array.isArray(status.announcements) && status.announcements.length) {
+        extra = `<pre class="announce">${esc(status.announcements.join("\n\n"))}</pre>`;
       }
       show("ok", lines + extra);
       fileInput.value = "";

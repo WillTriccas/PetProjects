@@ -21,6 +21,29 @@ const USER_PROMPT =
   'Read the "Total Score" value (the big number to the left of the slash). ' +
   'Ignore Global Rank and the "/par" value.';
 
+const MAX_ATTEMPTS = 6;
+const MAX_BACKOFF_MS = 60_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Parse a Retry-After header (delta-seconds or HTTP-date) into milliseconds. */
+function retryAfterMs(header: string | null): number | null {
+  if (!header) return null;
+  const secs = Number(header.trim());
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const when = Date.parse(header);
+  if (Number.isFinite(when)) return Math.max(0, when - Date.now());
+  return null;
+}
+
+/** Exponential backoff with jitter for a given (1-based) attempt. */
+function backoffMs(attempt: number): number {
+  const base = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** (attempt - 1));
+  return base + Math.floor(Math.random() * 500);
+}
+
 /**
  * Image score extractor backed by GitHub Models (OpenAI-compatible chat
  * completions endpoint) using a vision-capable model.
@@ -54,44 +77,71 @@ export class GitHubModelsExtractor implements ImageScoreExtractor {
       ],
     };
 
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
           authorization: `Bearer ${this.opts.token}`,
         },
         body: JSON.stringify(body),
       });
-    } catch (err) {
-      logger.error({ err }, "GitHub Models request failed (network)");
-      return null;
-    }
+      } catch (err) {
+        // Transient network failure — back off and retry.
+        if (attempt < MAX_ATTEMPTS) {
+          await sleep(backoffMs(attempt));
+          continue;
+        }
+        logger.error({ err }, "GitHub Models request failed (network)");
+        return null;
+      }
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      logger.error(
-        { status: res.status, body: text.slice(0, 500) },
-        "GitHub Models request returned non-OK status",
-      );
-      return null;
-    }
+      // Rate limited (429) or transient server error (5xx): honour Retry-After
+      // (GitHub Models returns e.g. 38s during bursts) and retry. Without this,
+      // a large export bursts past the per-minute limit and every image after
+      // the ~24th silently reads as null.
+      if (res.status === 429 || res.status >= 500) {
+        const waitMs = retryAfterMs(res.headers.get("retry-after")) ?? backoffMs(attempt);
+        await res.text().catch(() => "");
+        if (attempt < MAX_ATTEMPTS) {
+          logger.warn(
+            { status: res.status, waitMs, attempt },
+            "GitHub Models throttled; backing off before retry",
+          );
+          await sleep(waitMs);
+          continue;
+        }
+        logger.error({ status: res.status }, "GitHub Models still throttled after all retries");
+        return null;
+      }
 
-    const json = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) {
-      logger.warn("GitHub Models returned no content");
-      return null;
-    }
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        logger.error(
+          { status: res.status, body: text.slice(0, 500) },
+          "GitHub Models request returned non-OK status",
+        );
+        return null;
+      }
 
-    const score = parseScoreFromModelOutput(content);
-    if (score === null) {
-      logger.debug({ content: content.slice(0, 200) }, "Model reply had no parseable score");
+      const json = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const content = json.choices?.[0]?.message?.content;
+      if (!content) {
+        logger.warn("GitHub Models returned no content");
+        return null;
+      }
+
+      const score = parseScoreFromModelOutput(content);
+      if (score === null) {
+        logger.debug({ content: content.slice(0, 200) }, "Model reply had no parseable score");
+      }
+      return score;
     }
-    return score;
+    return null;
   }
 }
 

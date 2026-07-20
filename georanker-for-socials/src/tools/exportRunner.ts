@@ -181,8 +181,10 @@ export async function runExport(params: {
   messenger: GroupMessenger;
   /** Optional extractor override (defaults to the configured one) — used in tests. */
   extractor?: ImageScoreExtractor;
+  /** Optional progress callback, invoked after each image is read. */
+  onProgress?: (done: number, total: number) => void;
 }): Promise<ExportRunResult> {
-  const { config, repo, txtPath, mediaDir, messenger } = params;
+  const { config, repo, txtPath, mediaDir, messenger, onProgress } = params;
   logger.info({ txtPath, mediaDir }, "Processing WhatsApp export (image-only)");
 
   const extractor = params.extractor ?? createImageExtractor(config.env);
@@ -196,6 +198,20 @@ export async function runExport(params: {
   let newImages = 0;
   const unmatchedSenders = new Map<string, number>();
   let skippedNonImages = 0;
+
+  // Pre-count the images we'll actually read, so progress has a meaningful total.
+  const toProcess = messages.filter(
+    (m) =>
+      m.sender &&
+      m.attachedFile &&
+      isImageAttachment(m.attachedFile) &&
+      m.isoDate &&
+      matchSenderToPlayer(config.playersByName, m.sender) &&
+      !repo.imageSubmissionExists(imageMessageKey(m)),
+  );
+  const totalToRead = toProcess.length;
+  let processed = 0;
+  onProgress?.(0, totalToRead);
 
   for (const msg of messages) {
     if (!msg.sender || !msg.attachedFile) continue; // image-only: text never counts
@@ -219,6 +235,8 @@ export async function runExport(params: {
     if (repo.imageSubmissionExists(key)) continue; // already ingested — don't re-read
 
     const score = await extractImageScore(msg, mediaDir, extractor);
+    processed++;
+    onProgress?.(processed, totalToRead);
     const inserted = repo.insertImageSubmission({
       messageKey: key,
       gameDate: msg.isoDate,

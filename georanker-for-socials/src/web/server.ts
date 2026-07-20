@@ -14,6 +14,7 @@
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
@@ -34,6 +35,40 @@ class CapturingMessenger implements GroupMessenger {
   readonly messages: string[] = [];
   async sendToGroup(text: string): Promise<void> {
     this.messages.push(text);
+  }
+}
+
+/**
+ * A background export-processing job. Uploads are processed asynchronously
+ * because reading dozens of images through the rate-limited vision API (with
+ * Retry-After back-off) can take several minutes — longer than Azure's ~230s
+ * HTTP request timeout. The client uploads, gets a jobId, then polls
+ * `/api/upload-status/:jobId` until it is done.
+ */
+interface UploadJob {
+  id: string;
+  status: "processing" | "done" | "error";
+  progress: { done: number; total: number };
+  createdAt: number;
+  result?: {
+    summary: unknown;
+    announcements: string[];
+    standings: unknown;
+    digest: unknown;
+  };
+  error?: string;
+}
+
+const uploadJobs = new Map<string, UploadJob>();
+const JOB_TTL_MS = 30 * 60 * 1000;
+
+/** Drop finished jobs older than the TTL so the map doesn't grow unbounded. */
+function pruneJobs(): void {
+  const now = Date.now();
+  for (const [id, job] of uploadJobs) {
+    if (job.status !== "processing" && now - job.createdAt > JOB_TTL_MS) {
+      uploadJobs.delete(id);
+    }
   }
 }
 
@@ -106,6 +141,8 @@ export function createApp(deps: WebServerDeps): Express {
       return;
     }
     const uploadDir = files[0]!.destination;
+    let txtPath: string;
+    let mediaDir: string;
     try {
       // If a WhatsApp .zip was uploaded, unzip it in place so we can process the
       // _chat.txt + media it contains — no manual extraction needed.
@@ -117,28 +154,83 @@ export function createApp(deps: WebServerDeps): Express {
 
       const hasTxt = readdirSync(uploadDir).some((f) => f.toLowerCase().endsWith(".txt"));
       if (!hasTxt) {
+        rmSync(uploadDir, { recursive: true, force: true });
         res.status(400).json({
           error: "No _chat.txt found. Upload the WhatsApp 'Export chat' .zip (or its contents).",
         });
         return;
       }
-      const { txtPath, mediaDir } = resolveExportPaths(uploadDir);
-      const messenger = new CapturingMessenger();
-      const result = await runExport({ config, repo, txtPath, mediaDir, messenger });
-      const stats = new StatsService(repo);
-      res.json({
-        ok: true,
-        summary: result,
-        announcements: messenger.messages,
-        standings: formatTally(repo.getTally()),
-        digest: stats.buildDigest(),
-      });
+      ({ txtPath, mediaDir } = resolveExportPaths(uploadDir));
     } catch (err) {
-      logger.error({ err }, "Export upload failed");
-      res.status(500).json({ error: (err as Error).message });
-    } finally {
       rmSync(uploadDir, { recursive: true, force: true });
+      logger.error({ err }, "Export upload failed during unzip/validation");
+      res.status(500).json({ error: (err as Error).message });
+      return;
     }
+
+    // Process in the background — reading many images past the vision API's rate
+    // limit can exceed the HTTP timeout, so respond immediately with a jobId the
+    // client polls via /api/upload-status/:jobId.
+    pruneJobs();
+    const jobId = randomUUID();
+    const job: UploadJob = {
+      id: jobId,
+      status: "processing",
+      progress: { done: 0, total: 0 },
+      createdAt: Date.now(),
+    };
+    uploadJobs.set(jobId, job);
+
+    void (async () => {
+      const messenger = new CapturingMessenger();
+      try {
+        const result = await runExport({
+          config,
+          repo,
+          txtPath,
+          mediaDir,
+          messenger,
+          onProgress: (done, total) => {
+            job.progress = { done, total };
+          },
+        });
+        const stats = new StatsService(repo);
+        job.result = {
+          summary: result,
+          announcements: messenger.messages,
+          standings: formatTally(repo.getTally()),
+          digest: stats.buildDigest(),
+        };
+        job.status = "done";
+      } catch (err) {
+        logger.error({ err }, "Export processing failed");
+        job.error = (err as Error).message;
+        job.status = "error";
+      } finally {
+        rmSync(uploadDir, { recursive: true, force: true });
+      }
+    })();
+
+    res.status(202).json({ ok: true, jobId, status: "processing" });
+  });
+
+  // ── Poll an in-progress (or finished) export job ────────────────────────
+  app.get("/api/upload-status/:jobId", requireAdmin, (req, res) => {
+    const job = uploadJobs.get(String(req.params.jobId ?? ""));
+    if (!job) {
+      res.status(404).json({ error: "Unknown or expired job." });
+      return;
+    }
+    res.json({
+      ok: true,
+      status: job.status,
+      progress: job.progress,
+      summary: job.result?.summary,
+      announcements: job.result?.announcements ?? [],
+      standings: job.result?.standings,
+      digest: job.result?.digest,
+      error: job.error,
+    });
   });
 
   // ── Admin: manually override a day's result (fix vision misreads) ────────
