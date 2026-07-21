@@ -1,0 +1,44 @@
+name: Deploy Auto Journal Web
+
+# Auto-deploys the Auto Journal web app to Azure App Service (Sweden Central)
+# whenever the AutoJournalWeb/ folder changes on the auto-journal-web branch.
+# The server builds dependencies via Oryx (SCM_DO_BUILD_DURING_DEPLOYMENT=true).
+on:
+  push:
+    branches: [auto-journal-web]
+    paths:
+      - 'AutoJournalWeb/**'
+      - '.github/workflows/deploy-auto-journal-web.yml'
+  workflow_dispatch:
+
+# OIDC login to Azure needs an id-token; no long-lived credentials are stored.
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-auto-journal-web
+  cancel-in-progress: true
+
+env:
+  AZURE_WEBAPP_NAME: autojournalweb-gjxsq9
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: AutoJournalWeb

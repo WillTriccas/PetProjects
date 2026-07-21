@@ -33,10 +33,8 @@ WHOOP API (strain/sleep)  ┘                     summarised chats & calls)
 
 ## Setup
 
-Requires **Node.js 20+**. `better-sqlite3` compiles a native module, so on Windows
-you'll want the build tools (usually already present with a standard Node install;
-if not, install the "Desktop development with C++" workload or run
-`npm install --global windows-build-tools`).
+Requires **Node.js 22.5+** (Node 24 recommended). Storage uses the built-in
+`node:sqlite` module, so there's **no native build step** — nothing to compile.
 
 ```bash
 cd AutoJournalWeb
@@ -46,6 +44,10 @@ npm start
 ```
 
 Open <http://localhost:3000>.
+
+> On Node 22.x, `node:sqlite` is still behind a flag, so start with
+> `node --experimental-sqlite server/index.js`. On Node 24+ it's available by
+> default and plain `npm start` works.
 
 ### `.env`
 
@@ -120,6 +122,36 @@ GPT‑5.5 is a **reasoning** model, so the client omits `temperature` and uses
 Each request also sends a structured day summary (date, ordered places, activity
 line, per-contact message counts, calls, a photo manifest, and your manual note)
 alongside the hero images.
+
+---
+
+## Deployment (Azure App Service)
+
+A live instance runs on Azure App Service in **Sweden Central**:
+
+- **URL:** <https://autojournalweb-gjxsq9.azurewebsites.net>
+- **Resource group:** `rg-auto-journal-web` · **Plan:** `asp-auto-journal-web` (Linux B1)
+- **Runtime:** Node 22 LTS. Startup command:
+  `node --experimental-sqlite server/index.js` (the flag enables `node:sqlite` on Node 22).
+- **App settings** (Azure → Configuration) mirror `.env`: `MODEL`,
+  `MAX_PHOTOS_PER_DAY`, `NOMINATIM_USER_AGENT`, `GITHUB_TOKEN`, `WHOOP_ACCESS_TOKEN`.
+  The site serves the UI and imports without a token; **generation needs
+  `GITHUB_TOKEN` set** to a PAT with the Models permission.
+
+### Continuous deployment
+
+`.github/workflows/deploy-auto-journal-web.yml` redeploys automatically on every
+push to the **`auto-journal-web`** branch that touches `AutoJournalWeb/**`
+(or the workflow itself). It can also be run manually from the Actions tab.
+
+Auth uses **OIDC federated credentials** (no stored passwords/publish profiles):
+a user-assigned managed identity (`id-auto-journal-web-gh`) with a federated
+credential scoped to this branch, plus `Contributor` on the resource group. The
+workflow reads three non-secret identifiers from repo secrets: `AZURE_CLIENT_ID`,
+`AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
+
+> To change tiers, scale the `asp-auto-journal-web` plan (e.g. `F1` free / `B1`
+> basic). To use a different app name, update `AZURE_WEBAPP_NAME` in the workflow.
 
 ---
 
