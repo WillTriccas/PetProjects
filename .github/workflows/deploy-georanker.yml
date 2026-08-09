@@ -2,7 +2,7 @@ name: Deploy GeoRanker for socials
 
 on:
   push:
-    branches: [willtriccas-georanker-for-socials]
+    branches: [main]
     paths:
       - "georanker-for-socials/**"
       - ".github/workflows/deploy-georanker.yml"
