@@ -1,0 +1,8 @@
+node_modules
+dist
+data
+auth_state
+.env
+*.log
+.git
+seed-tmp.ts
