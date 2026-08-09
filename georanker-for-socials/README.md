@@ -173,6 +173,12 @@ e.g. `447700900123@s.whatsapp.net`).
 
 ## Web dashboard & Azure hosting
 
+**Live dashboard:** <https://georanker-will.azurewebsites.net>
+
+Production deploys run only when changes under `georanker-for-socials/` (or its
+deployment workflow) are pushed or merged to `main`. Changes left on other branches
+do not update the live Azure web app.
+
 A themed web dashboard renders the whole league — standings, the Point Hoarder
 table, hall of records, streaks, player of the month, scoring averages, the
 fastest-finger league, wooden spoons, bridesmaids, **disqualifications**, group
